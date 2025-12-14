@@ -1,0 +1,29 @@
+# --- FRONTEND (React/Node) ---
+node_modules/
+dist/
+build/
+.env
+.env.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# --- BACKEND (Django/Python) ---
+*.pyc
+__pycache__/
+*.sqlite3
+db.sqlite3
+.env
+media/
+
+# --- VIRTUAL ENVIRONMENTS ---
+env/
+env1/
+venv/
+.venv/
+
+# --- SYSTEM & EDITOR FILES ---
+.DS_Store
+.vscode/
+.idea/
+Thumbs.db
