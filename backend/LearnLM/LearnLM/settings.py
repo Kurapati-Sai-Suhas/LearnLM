@@ -147,6 +147,8 @@ REST_FRAMEWORK = {
         # Use SimpleJWT to check for tokens
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 3,
 }
 
 # SIMPLE_JWT configures the "Wristband" rules
@@ -164,7 +166,7 @@ SIMPLE_JWT = {
     # Uses your project's secret key (KEEP THIS SAFE!)
     'SIGNING_KEY': SECRET_KEY,
     # The header required: "Authorization: Bearer <token>"
-    'AUTH_HEADER_TYPES': ('suhas1683',),
+    'AUTH_HEADER_TYPES': ('Bearer',),
 }
 
 AUTH_USER_MODEL = 'groups.User'

@@ -28,6 +28,7 @@ class StudyGroup(models.Model):
     members = models.ManyToManyField(User, related_name='joined_groups', blank=True)
     # Use this code to let people join
     join_code = models.CharField(max_length=10, unique=True)
+    capacity = models.IntegerField(default=50)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
