@@ -67,10 +67,6 @@ export const authAPI = {
 
 // ==================== Study Groups API ====================
 export const groupsAPI = {
-  // Axios automatically returns the data inside a .data property, 
-  // but your React component expects the response object to read .data from.
-  // api.get returns the full response object, which is exactly what we need.
-  
   getAll: () => api.get('/groups/'),
   
   create: (groupData) => api.post('/groups/', groupData),
@@ -83,18 +79,23 @@ export const groupsAPI = {
   
   update: (groupId, updates) => api.patch(`/groups/${groupId}/`, updates),
 
-  // 📦 FILE UPLOAD
+  // 📦 FILE UPLOAD (FIXED)
   uploadMaterial: (title, file, groupId) => {
     const formData = new FormData();
     formData.append('title', title);
-    formData.append('study_group', groupId);
+    formData.append('study_group', groupId); // Matches backend field name
     formData.append('file', file);
 
-    // Axios detects FormData and sets 'Content-Type': 'multipart/form-data' automatically
-    return api.post('/materials/', formData);
+    // 👇 THE FIX: We MUST override the default JSON header here.
+    return api.post('/materials/', formData, {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+    });
   },
 
-  getMaterials: (groupId) => api.get(`/materials/?search=${groupId}`)
+  // We use 'study_group' to filter by ID exactly, bypassing the fuzzy text search
+   getMaterials: (groupId) => api.get(`/materials/?study_group=${groupId}`)
 };
 
 // ==================== AI Features API ====================
@@ -120,6 +121,4 @@ export const scheduleAPI = {
   deleteEvent: (eventId) => api.delete(`/schedule/${eventId}/`),
 };
 
-// 👇 CRITICAL: DEFAULT EXPORT MUST BE THE AXIOS INSTANCE
-// This allows "import api from ..." to work, enabling "api.get()"
 export default api;

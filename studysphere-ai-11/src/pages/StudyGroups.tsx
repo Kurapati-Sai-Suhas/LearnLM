@@ -96,7 +96,8 @@ export default function StudyGroups() {
   if (loading && groups.length === 0) return <div className="p-10 text-center">Loading List...</div>;
 
   return (
-    <div className="space-y-8 p-8 animate-fade-in">
+    // 👇 ADDED: max-w-7xl mx-auto w-full (This centers the content)
+    <div className="space-y-8 p-8 animate-fade-in max-w-7xl mx-auto w-full">
       <h1 className="text-3xl font-bold">Study Groups</h1>
 
       {/* 👇 ERROR BOX (If something is wrong, this will tell us) */}

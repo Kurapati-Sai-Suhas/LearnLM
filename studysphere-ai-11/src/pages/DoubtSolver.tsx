@@ -1,48 +1,115 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { MessageSquare, Send, Sparkles, Upload } from "lucide-react";
+import { MessageSquare, Send, Sparkles, Loader2, FileText } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { groupsAPI } from "@/services/api";
+import api from "@/services/api"; 
+import 'katex/dist/katex.min.css';
+import Latex from 'react-latex-next';
 
 export default function DoubtSolver() {
+  // --- 1. DATA STATE ---
+  const [groups, setGroups] = useState<any[]>([]);
+  const [files, setFiles] = useState<any[]>([]);
+  const [selectedGroupId, setSelectedGroupId] = useState("");
+  const [selectedMaterialId, setSelectedMaterialId] = useState("");
+
+  // --- 2. CHAT STATE ---
   const [messages, setMessages] = useState([
     {
       id: 1,
       sender: "ai",
-      content: "Hi! I'm your AI Doubt Solver. Ask me anything about your studies, and I'll help you understand the concepts better. You can also upload study materials for contextual help!",
+      content: "Hi! Select a file below to start chatting with your document.",
       timestamp: "Just now",
     },
   ]);
   const [inputMessage, setInputMessage] = useState("");
+  const [loading, setLoading] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
-  const handleSendMessage = () => {
-    if (!inputMessage.trim()) return;
-
-    const newUserMessage = {
-      id: messages.length + 1,
-      sender: "user",
-      content: inputMessage,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+  // 👇 CHANGED: Load Groups with page_size=100
+  useEffect(() => {
+    const fetchAllGroups = async () => {
+        try {
+            // This asks Django for 100 groups instead of just 9
+            const res = await api.get("/groups/?page_size=100"); 
+            setGroups(res.data.results || res.data || []);
+        } catch (err) {
+            console.error("Failed to load groups", err);
+        }
     };
+    fetchAllGroups();
+  }, []);
 
-    setMessages([...messages, newUserMessage]);
+  // Auto-scroll
+  useEffect(() => {
+    if (scrollRef.current) {
+        scrollRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages]);
+
+  const handleGroupChange = async (groupId: string) => {
+    setSelectedGroupId(groupId);
+    setFiles([]);
+    try {
+        // We use the regular API here as files are usually not paginated heavily yet
+        const res = await groupsAPI.getMaterials(groupId);
+        setFiles(res.data.results || res.data || []);
+    } catch (err) {
+        console.error(err);
+    }
+  };
+
+  // --- 3. SEND MESSAGE LOGIC ---
+  const handleSendMessage = async () => {
+    if (!inputMessage.trim()) return;
+    if (!selectedMaterialId) {
+        alert("Please select a file first!");
+        return;
+    }
+
+    const userText = inputMessage;
+    const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    // 1. Add User Message
+    const newUserMessage = { id: Date.now(), sender: "user", content: userText, timestamp };
+    setMessages((prev) => [...prev, newUserMessage]);
     setInputMessage("");
+    setLoading(true);
 
-    // Simulate AI response - this will be replaced with actual Django API + AI call
-    setTimeout(() => {
+    try {
+      // 2. Call Backend
+      const res = await api.post('/ai/doubt/', { 
+        question: userText, 
+        materialId: selectedMaterialId 
+      });
+
+      const aiAnswer = res.data.answer || "I couldn't find an answer in the document.";
+
+      // 3. Add AI Response
       const aiResponse = {
-        id: messages.length + 2,
+        id: Date.now() + 1,
         sender: "ai",
-        content: "Great question! Let me help you with that. Based on your study materials and the context of your question, here's a detailed explanation...",
+        content: aiAnswer,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
       setMessages((prev) => [...prev, aiResponse]);
-    }, 1000);
+
+    } catch (err) {
+      console.error(err);
+      setMessages((prev) => [...prev, {
+        id: Date.now() + 1, sender: "ai", content: "⚠️ Error: Check if Backend is running.", timestamp
+      }]);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleKeyPress = (e) => {
+  const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
@@ -50,139 +117,109 @@ export default function DoubtSolver() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-in fade-in h-[calc(100vh-100px)] flex flex-col">
       {/* Header */}
       <div>
         <h1 className="text-3xl font-bold text-foreground">AI Doubt Solver</h1>
         <p className="text-muted-foreground mt-1">Get instant answers to your academic questions</p>
       </div>
 
-      {/* Main Chat Interface */}
-      <div className="grid gap-6 lg:grid-cols-3">
-        {/* Chat Area */}
-        <Card className="border-border lg:col-span-2">
-          <CardHeader className="border-b bg-gradient-primary">
+      {/* Main Chat Interface - Full Width */}
+      <Card className="border-border flex-1 flex flex-col min-h-0 shadow-md">
+          
+          {/* Top Bar */}
+          <CardHeader className="border-b bg-gradient-primary shrink-0 py-4">
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 rounded-full bg-white/20 flex items-center justify-center">
                 <Sparkles className="h-5 w-5 text-white" />
               </div>
               <div>
-                <CardTitle className="text-white">AI Doubt Solver</CardTitle>
-                <p className="text-xs text-white/80">Powered by Advanced AI</p>
+                <CardTitle className="text-white">AI Assistant</CardTitle>
+                <p className="text-xs text-white/80">Context-aware study helper</p>
               </div>
             </div>
           </CardHeader>
-          <CardContent className="p-0">
-            <ScrollArea className="h-[500px] p-4">
-              <div className="space-y-4">
+          
+          <CardContent className="p-0 flex-1 flex flex-col min-h-0 relative">
+            
+            {/* Messages Area */}
+            <ScrollArea className="flex-1 p-4 bg-slate-50/30">
+              <div className="space-y-4 max-w-4xl mx-auto">
                 {messages.map((message) => (
-                  <div
-                    key={message.id}
-                    className={`flex gap-3 ${message.sender === "user" ? "flex-row-reverse" : ""}`}
-                  >
+                  <div key={message.id} className={`flex gap-3 ${message.sender === "user" ? "flex-row-reverse" : ""}`}>
                     <Avatar className={`h-8 w-8 ${message.sender === "ai" ? "bg-primary" : "bg-muted"}`}>
                       <AvatarFallback className={message.sender === "ai" ? "text-primary-foreground" : "text-foreground"}>
                         {message.sender === "ai" ? "AI" : "ME"}
                       </AvatarFallback>
                     </Avatar>
-                    <div className={`flex-1 space-y-1 ${message.sender === "user" ? "items-end" : ""}`}>
-                      <div
-                        className={`inline-block rounded-lg px-4 py-2 ${
-                          message.sender === "user"
-                            ? "bg-primary text-primary-foreground ml-auto"
-                            : "bg-muted text-foreground"
-                        }`}
-                      >
-                        <p className="text-sm">{message.content}</p>
+                    <div className={`flex-1 space-y-1 max-w-[80%] ${message.sender === "user" ? "items-end" : ""}`}>
+                      <div className={`inline-block rounded-lg px-4 py-2 shadow-sm ${
+                          message.sender === "user" ? "bg-primary text-primary-foreground ml-auto" : "bg-white border text-foreground"
+                        }`}>
+                        {/* Render Math/Latex */}
+                        <div className="text-sm">
+                            <Latex>{message.content}</Latex>
+                        </div>
                       </div>
                       <p className="text-xs text-muted-foreground px-2">{message.timestamp}</p>
                     </div>
                   </div>
                 ))}
+                
+                {loading && (
+                    <div className="flex gap-3">
+                        <Avatar className="h-8 w-8 bg-primary"><AvatarFallback className="text-white">AI</AvatarFallback></Avatar>
+                        <div className="bg-white border px-4 py-2 rounded-lg flex items-center gap-2 shadow-sm">
+                            <Loader2 className="w-3 h-3 animate-spin text-primary"/> <span className="text-sm text-gray-500">Reading document...</span>
+                        </div>
+                    </div>
+                )}
+                <div ref={scrollRef} />
               </div>
             </ScrollArea>
-            <div className="border-t p-4">
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="border-primary text-primary hover:bg-primary hover:text-primary-foreground"
-                >
-                  <Upload className="h-4 w-4" />
-                </Button>
-                <Input
-                  placeholder="Ask your question here..."
-                  value={inputMessage}
-                  onChange={(e) => setInputMessage(e.target.value)}
-                  onKeyPress={handleKeyPress}
-                  className="flex-1"
-                />
-                <Button
-                  onClick={handleSendMessage}
-                  disabled={!inputMessage.trim()}
-                  className="bg-primary hover:bg-primary-dark text-primary-foreground"
-                >
-                  <Send className="h-4 w-4" />
-                </Button>
+
+            {/* Bottom Bar: Inputs */}
+            <div className="border-t p-4 bg-white shrink-0">
+              <div className="flex flex-col md:flex-row gap-3 max-w-4xl mx-auto">
+                
+                {/* 👇 MOVED HERE: The Selection Dropdowns */}
+                <div className="flex gap-2 shrink-0">
+                    <Select onValueChange={handleGroupChange}>
+                        <SelectTrigger className="w-[140px] h-10 border-primary/20 bg-primary/5 focus:ring-primary">
+                            <SelectValue placeholder="Select Group" />
+                        </SelectTrigger>
+                        <SelectContent>{groups.map(g => <SelectItem key={g.id} value={String(g.id)}>{g.name}</SelectItem>)}</SelectContent>
+                    </Select>
+
+                    <Select onValueChange={setSelectedMaterialId} disabled={!selectedGroupId}>
+                        <SelectTrigger className="w-[140px] h-10 border-primary/20 bg-primary/5 focus:ring-primary">
+                             {/* Icon inside the trigger */}
+                             <FileText className="w-4 h-4 mr-2 opacity-50"/>
+                            <SelectValue placeholder="Select File" />
+                        </SelectTrigger>
+                        <SelectContent>{files.map(f => <SelectItem key={f.id} value={String(f.id)}>{f.title}</SelectItem>)}</SelectContent>
+                    </Select>
+                </div>
+
+                {/* Input Field */}
+                <div className="flex-1 flex gap-2">
+                    <Input
+                      placeholder={selectedMaterialId ? "Ask your question..." : "Select a file to start chatting"}
+                      value={inputMessage}
+                      onChange={(e) => setInputMessage(e.target.value)}
+                      onKeyDown={handleKeyPress}
+                      disabled={!selectedMaterialId || loading}
+                      className="flex-1 h-10"
+                    />
+                    <Button onClick={handleSendMessage} disabled={!inputMessage.trim() || loading} className="h-10 px-4 bg-primary hover:bg-primary-dark">
+                      {loading ? <Loader2 className="h-4 w-4 animate-spin"/> : <Send className="h-4 w-4" />}
+                    </Button>
+                </div>
+
               </div>
             </div>
           </CardContent>
-        </Card>
-
-        {/* Suggestions Sidebar */}
-        <div className="space-y-6">
-          <Card className="border-border">
-            <CardHeader>
-              <CardTitle className="text-foreground flex items-center gap-2">
-                <MessageSquare className="h-5 w-5 text-primary" />
-                Quick Tips
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="p-3 rounded-lg bg-muted/50">
-                <p className="text-sm font-medium text-foreground mb-1">Be specific</p>
-                <p className="text-xs text-muted-foreground">
-                  Include relevant details about your doubt for better answers
-                </p>
-              </div>
-              <div className="p-3 rounded-lg bg-muted/50">
-                <p className="text-sm font-medium text-foreground mb-1">Upload materials</p>
-                <p className="text-xs text-muted-foreground">
-                  Share study materials for contextual help
-                </p>
-              </div>
-              <div className="p-3 rounded-lg bg-muted/50">
-                <p className="text-sm font-medium text-foreground mb-1">Ask follow-ups</p>
-                <p className="text-xs text-muted-foreground">
-                  Don't hesitate to ask for clarification
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border">
-            <CardHeader>
-              <CardTitle className="text-foreground">Suggested Questions</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {[
-                "Explain Newton's laws of motion",
-                "How do I solve quadratic equations?",
-                "What are the main types of chemical bonds?",
-              ].map((question, index) => (
-                <Button
-                  key={index}
-                  variant="outline"
-                  className="w-full justify-start text-left h-auto py-3 border-primary/20 hover:bg-primary/10"
-                  onClick={() => setInputMessage(question)}
-                >
-                  <span className="text-sm text-foreground">{question}</span>
-                </Button>
-              ))}
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+      </Card>
     </div>
   );
 }

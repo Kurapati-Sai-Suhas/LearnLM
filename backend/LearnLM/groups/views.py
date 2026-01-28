@@ -1,46 +1,56 @@
-from .permissions import IsOwnerOrReadOnly
-from rest_framework import viewsets, generics, filters
-from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework.decorators import action
+from rest_framework import viewsets, generics, filters, permissions, parsers
 from rest_framework.views import APIView
 from rest_framework.response import Response
+from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated, AllowAny
-from rest_framework.parsers import MultiPartParser, FormParser
+from django_filters.rest_framework import DjangoFilterBackend
 from django.contrib.auth import get_user_model
+from rest_framework import status
+from rest_framework.pagination import PageNumberPagination # 👈 Import this
 
+# Safe Import for AI
+try:
+    from .ai_services import (
+        generate_flashcards_with_gemini, 
+        answer_doubt_with_gemini,
+        generate_quiz_with_gemini
+    )
+except ImportError:
+    # Fallback to prevent crash if file is missing
+    def generate_flashcards_with_gemini(*args): return []
+    def generate_quiz_with_gemini(*args): return []
+    def answer_doubt_with_gemini(*args): return "Backend Error: AI Service not found."
+
+from .utils import extract_text_from_pdf
 from .models import StudyGroup, StudyMaterial
 from .serializers import StudyGroupSerializer, UserSerializer, StudyMaterialSerializer
 
 User = get_user_model()
 
+# 👇 1. ADD THIS CLASS (Fixes "No Groups Found")
+class LargePagination(PageNumberPagination):
+    page_size = 8             # Default: 9 items (Perfect for 3x3 grid)
+    page_size_query_param = 'page_size' # Allow frontend to request more (e.g., ?page_size=100)
+    max_page_size = 1000
 
 class CreateUserView(generics.CreateAPIView):
     serializer_class = UserSerializer
     permission_classes = [AllowAny]
-    def get_queryset(self):
-        groups=StudyGroup.objects.all()
-
 
 class StudyGroupViewSet(viewsets.ModelViewSet):
-    queryset = StudyGroup.objects.all()
+    queryset = StudyGroup.objects.all().order_by('-created_at')
     serializer_class = StudyGroupSerializer
-    permission_classes = [IsAuthenticated,IsOwnerOrReadOnly]
-    # Search Configuration
+    permission_classes = [IsAuthenticated]
+    
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
-
-    # 1. Exact Matches (Good for IDs, Numbers, Codes)
     filterset_fields = ['id', 'join_code', 'capacity']
-    # 2. Fuzzy Search (Good for Text)
-    # ⚠️ REMOVED: id, created_at, members (These cause crashes in text search)
     search_fields = ['name', 'description', 'join_code']
-    # 3. Sorting (Good for Ranking)
-    # ⚠️ REMOVED: description (Sorting by long text is slow and useless)
-    ordering_fields = ['created_at', 'capacity', 'name']
-
+    
+    # 👇 2. USE IT HERE
+    pagination_class = LargePagination 
 
     def perform_create(self, serializer):
         serializer.save(creator=self.request.user)
-
 
     @action(detail=False, methods=['post'])
     def join(self, request):
@@ -50,12 +60,10 @@ class StudyGroupViewSet(viewsets.ModelViewSet):
 
         try:
             group = StudyGroup.objects.get(join_code=code)
-
             if group.members.count() >= group.capacity:
                 return Response({'error': 'Group is full!'}, status=400)
-
             if request.user in group.members.all():
-                 return Response({'message': 'Already a member'}, status=200)
+                 return Response({'message': 'Already a member', 'id': group.id}, status=200)
 
             group.members.add(request.user)
             return Response({'message': 'Joined successfully!', 'id': group.id})
@@ -63,51 +71,28 @@ class StudyGroupViewSet(viewsets.ModelViewSet):
         except StudyGroup.DoesNotExist:
             return Response({'error': 'Invalid Group Code'}, status=404)
 
-
-    @action(detail=True, methods=["post",])
+    @action(detail=True, methods=["post"])
     def leave(self, request, pk=None):
-        group=self.get_object()
-        user=request.user
-        if user not in group.members.all():
-            return Response({"Message":"You are not a member of this group."}, status=400)
-        group.members.remove(request.user)
-        return Response({"Message":"You have left the group."}, status=200)
-
-    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
-    def kickmember(self, request, pk=None):
         group = self.get_object()
-        user = request.user
-        member_id = request.data.get('member_id')
+        if request.user not in group.members.all():
+            return Response({"Message": "You are not a member of this group."}, status=400)
+        group.members.remove(request.user)
+        return Response({"Message": "You have left the group."}, status=200)
 
-        if group.creator != user:
-            return Response({"status": "only the creator can kick members"}, status=403)
-        if not member_id:
-             return Response({"status": "member_id is required"}, status=400)
-
-        try:
-            usertobekicked = User.objects.get(id=member_id)
-        except User.DoesNotExist:
-            return Response({"status": "User not found"}, status=404)
-
-        if usertobekicked not in group.members.all():
-            return Response({"status": "user is not a member of the group"}, status=400)
-        group.members.remove(usertobekicked)
-        return Response({"status": "member kicked successfully"}, status=200)
-
-
-class StudyMaterialList(generics.ListCreateAPIView):
-    queryset = StudyMaterial.objects.all()
+class MaterialViewSet(viewsets.ModelViewSet):
+    queryset = StudyMaterial.objects.all().order_by('-upload_date')
     serializer_class = StudyMaterialSerializer
     permission_classes = [IsAuthenticated]
-    parser_classes = [MultiPartParser, FormParser]
+    parser_classes = (parsers.MultiPartParser, parsers.FormParser)
+    
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
-    filterset_fields = ['study_group', 'uploaded_by']
-    search_fields = ['title', 'group__name']
+    filterset_fields = ['study_group', 'uploaded_by'] 
+    search_fields = ['title', 'study_group__name']
 
     def perform_create(self, serializer):
-        serializer.save(uploaded_by=self.request.user)
-
-
+        group_id = self.request.data.get('study_group')
+        print(f"📦 Uploading file... Group ID: {group_id}")
+        serializer.save(uploaded_by=self.request.user, study_group_id=group_id)
 
 class UserDashboardStats(APIView):
     permission_classes = [IsAuthenticated]
@@ -119,15 +104,71 @@ class UserDashboardStats(APIView):
 
         return Response({
             "username": user.username,
-            "joined_groups": joined_count,
+            "active_groups": joined_count + created_count,
             "created_groups": created_count,
+            "joined_groups": joined_count,
             "study_hours": 0,
-            "points": 100
+            "achievement_points": 100
         })
 
 class UserProfileView(APIView):
     permission_classes = [IsAuthenticated]
-
     def get(self, request):
         serializer = UserSerializer(request.user)
         return Response(serializer.data)
+
+class AIFlashcardView(APIView):
+    def post(self, request):
+        material_id = request.data.get('materialId')
+        topic = request.data.get('topic', 'General')
+
+        try:
+            material = StudyMaterial.objects.get(id=material_id)
+        except StudyMaterial.DoesNotExist:
+            return Response({"error": "File not found"}, status=404)
+
+        extracted_text = extract_text_from_pdf(material.file.name)
+        if not extracted_text:
+             return Response({"error": "PDF is empty or unreadable"}, status=400)
+
+        print(f"🚀 Asking AI to generate cards for topic: {topic}")
+        flashcards = generate_flashcards_with_gemini(extracted_text, topic)
+
+        return Response({"flashcards": flashcards}, status=200)
+
+class AIDoubtView(APIView):
+    def post(self, request):
+        material_id = request.data.get('materialId')
+        question = request.data.get('question')
+
+        if not question:
+            return Response({"error": "Question is required"}, status=400)
+
+        try:
+            material = StudyMaterial.objects.get(id=material_id)
+        except StudyMaterial.DoesNotExist:
+            return Response({"error": "File not found"}, status=404)
+
+        extracted_text = extract_text_from_pdf(material.file.name)
+        if not extracted_text:
+             return Response({"error": "PDF is empty"}, status=400)
+
+        answer = answer_doubt_with_gemini(extracted_text, question)
+
+        return Response({"answer": answer}, status=200)
+    
+class AIQuizView(APIView):
+    def post(self, request):
+        material_id = request.data.get('materialId')
+        topic = request.data.get('topic', 'General')
+        difficulty = request.data.get('difficulty', 'Medium')
+        try:
+            material = StudyMaterial.objects.get(id=material_id)
+        except StudyMaterial.DoesNotExist:
+            return Response({"error": "File not found"}, status=404)
+
+        extracted_text = extract_text_from_pdf(material.file.name)
+        if not extracted_text: return Response({"error": "PDF is empty"}, status=400)
+
+        quiz = generate_quiz_with_gemini(extracted_text, topic, difficulty)
+        return Response({"quiz": quiz}, status=200)

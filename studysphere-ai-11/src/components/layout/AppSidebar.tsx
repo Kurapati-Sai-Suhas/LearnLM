@@ -30,7 +30,7 @@ import {
 } from "@/components/ui/sidebar";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { authAPI, userAPI } from "@/services/api"; // <--- Import APIs
+import { authAPI, userAPI } from "@/services/api"; 
 
 const menuItems = [
   { title: "Dashboard", url: "/", icon: Home },
@@ -59,13 +59,18 @@ export function AppSidebar() {
   useEffect(() => {
     const loadProfile = async () => {
       try {
-        const data = await userAPI.getProfile();
+        const response = await userAPI.getProfile();
+        // 👇 FIX: The data is inside response.data
+        const userData = response.data;
+        
         // If the API returns valid data, update state
-        if (data && data.username) {
-          setUser(data);
+        if (userData && userData.username) {
+          setUser(userData);
         }
       } catch (error) {
         console.error("Failed to load profile:", error);
+        // Fallback so it doesn't say "Loading..." forever
+        setUser({ username: "Guest", role: "Student" });
       }
     };
     loadProfile();
@@ -73,11 +78,11 @@ export function AppSidebar() {
 
   // 2. Real Logout Logic
   const handleLogout = () => {
-    authAPI.logout(); // This clears token and redirects to /auth
+    authAPI.logout(); 
   };
 
-  // Calculate initials dynamically (e.g., "admin" -> "A")
-  const userInitials = user.username 
+  // Calculate initials dynamically
+  const userInitials = user.username && user.username !== "Loading..."
     ? user.username.charAt(0).toUpperCase() 
     : "?";
 

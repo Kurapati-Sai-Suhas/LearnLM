@@ -11,4 +11,4 @@ class IsOwnerOrReadOnly(permissions.BasePermission):
 
         owner = getattr(obj, 'creator', getattr(obj, 'uploaded_by', None))
 
-        return obj.creator == request.user
+        return owner == request.user
