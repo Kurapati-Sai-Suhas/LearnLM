@@ -1,43 +1,48 @@
 import os
-import pypdf # 👈 We import the whole library to avoid naming errors
-from django.conf import settings
+import PyPDF2
+import docx
+import PIL.Image # 👈 This is the new python-docx library
 
-def extract_text_from_pdf(pdf_path):
-    """
-    Takes a file path, reads the PDF, and returns the text string.
-    """
+def extract_text_from_file(file_path):
+    """ Reads text from PDF, DOCX, or TXT files based on extension. """
+    print(f"🔍 Attempting to read file at: {file_path}")
+    # Get the file extension (e.g., '.pdf', '.docx')
+    ext = os.path.splitext(file_path)[1].lower()
+    text = ""
+
     try:
-        # 1. Construct the full path
-        # If the path already has the drive letter (C:...), use it. Otherwise join with MEDIA_ROOT.
-        full_path = str(pdf_path)
-        if not os.path.isabs(full_path):
-            full_path = os.path.join(settings.MEDIA_ROOT, full_path)
-        
-        print(f"📖 Reading file at: {full_path}")
-        
-        # 2. Open the file using the explicit class
-        # (This fixes the 'module not callable' error)
-        reader = pypdf.PdfReader(full_path)
-        
-        # 3. Extract text
-        text = ""
-        # Limit to first 10 pages to be fast
-        for i, page in enumerate(reader.pages):
-            if i >= 10: break 
-            page_text = page.extract_text()
-            if page_text:
-                text += page_text + "\n"
-            
-        if not text.strip():
-            print("⚠️ Warning: PDF extracted text is empty.")
-            
+        if ext == '.pdf':
+            with open(file_path, 'rb') as file:
+                reader = PyPDF2.PdfReader(file)
+                for page in reader.pages:
+                    extracted = page.extract_text()
+                    if extracted:
+                        text += extracted + "\n"
+        elif ext == '.docx':
+            doc = docx.Document(file_path)
+            for para in doc.paragraphs:
+                text += para.text + "\n"
+        elif ext == '.txt':
+            with open(file_path, 'r', encoding='utf-8') as file:
+                text = file.read()
+        else:
+            print(f"⚠️ Unsupported file type: {ext}")
+            return None
+
+        print(f"✅ Extracted {len(text)} characters from {ext} file.")
         return text
-    
+
     except Exception as e:
-        print(f"❌ Error reading PDF: {e}")
-        # Debug info to help us if it fails again
-        try:
-            print(f"🔍 pypdf version: {pypdf.__version__}")
-        except:
-            pass
+        print(f"❌ File Read Error: {e}")
+        return ""
+
+
+def load_image_for_ai(file_path):
+    """ Opens an image file and prepares it for Gemini Vision """
+    print(f"🖼️ Opening Image: {file_path}")
+    try:
+        img = PIL.Image.open(file_path)
+        return img
+    except Exception as e:
+        print(f"❌ Image Load Error: {e}")
         return None

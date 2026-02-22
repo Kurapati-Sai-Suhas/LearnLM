@@ -11,7 +11,13 @@ from .views import (
     UserDashboardStats, 
     UserProfileView,
     AIDoubtView,
-    AIQuizView, # <--- Added this
+    AIQuizView,
+    analytics_data,
+    QuizResultCreateView,
+    ListAssignedQuizView,
+    AssignedQuizCreateView,
+    ManageAssignedQuizView,
+    # <--- Added this
 
 )
 
@@ -38,4 +44,9 @@ urlpatterns = [
     path('ai/flashcards/', AIFlashcardView.as_view(), name='ai-flashcards'),
     path('ai/quiz/', AIQuizView.as_view(), name='ai-quiz'),      # 👈 The missing link for Quiz
     path('ai/doubt/', AIDoubtView.as_view(), name='ai-doubt'),
+    path('analytics/charts/', analytics_data, name='analytics-charts'),
+    path('quiz/save/', QuizResultCreateView.as_view(), name='save-quiz'),
+    path('quizzes/assign/', AssignedQuizCreateView.as_view(), name='assign-quiz'),
+    path('quizzes/assigned/', ListAssignedQuizView.as_view(), name='list-assigned-quizzes'),
+    path('quizzes/assigned/<int:pk>/', ManageAssignedQuizView.as_view(), name='manage-assigned-quiz')
 ]

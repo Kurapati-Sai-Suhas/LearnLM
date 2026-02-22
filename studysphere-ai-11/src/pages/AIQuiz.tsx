@@ -1,33 +1,40 @@
 import { useState, useEffect } from "react";
-import { groupsAPI, aiAPI } from "@/services/api"; // Import API
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import axios from "axios"; 
+import { groupsAPI, aiAPI } from "@/services/api"; 
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { Brain, Upload, Loader2, CheckCircle, XCircle, Trophy, RefreshCw } from "lucide-react";
+import { Brain, Upload, Loader2, CheckCircle, XCircle, Trophy, RefreshCw, Users, Calendar } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import 'katex/dist/katex.min.css';
 import Latex from 'react-latex-next';
 
 export default function AIQuiz() {
   // --- STATE: DATA LOADING ---
-  const [groups, setGroups] = useState<any[]>([]);
-  const [files, setFiles] = useState<any[]>([]);
+  const [groups, setGroups] = useState([]);
+  const [files, setFiles] = useState([]);
   
   // --- STATE: SELECTION ---
   const [selectedGroupId, setSelectedGroupId] = useState("");
   const [selectedMaterialId, setSelectedMaterialId] = useState("");
   const [topic, setTopic] = useState("");
-  const [isConfigMode, setIsConfigMode] = useState(false); // Toggles the input form
+  const [isConfigMode, setIsConfigMode] = useState(false); 
   const [loading, setLoading] = useState(false);
 
+  // --- NEW STATE: LMS TEACHER MODE & STUDENT ASSIGNMENTS ---
+  const [showEditMode, setShowEditMode] = useState(false);
+  const [editableQuiz, setEditableQuiz] = useState([]);
+  const [deadline, setDeadline] = useState("");
+  const [assignedQuizzes, setAssignedQuizzes] = useState([]); // 👈 NEW STATE
+
   // --- STATE: QUIZ GAMEPLAY ---
-  const [quizData, setQuizData] = useState<any[]>([]);
+  const [quizData, setQuizData] = useState([]);
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [score, setScore] = useState(0);
   const [showResult, setShowResult] = useState(false);
-  const [selectedOption, setSelectedOption] = useState<string | null>(null);
+  const [selectedOption, setSelectedOption] = useState(null);
   const [isAnswerChecked, setIsAnswerChecked] = useState(false);
 
   // 1. Load Groups on Mount
@@ -35,44 +42,107 @@ export default function AIQuiz() {
     groupsAPI.getAll().then(res => setGroups(res.data.results || res.data || []));
   }, []);
 
-  // 2. Load Files when Group Selected
-  const handleGroupChange = async (groupId: string) => {
+  // 2. Load Files & Pending Quizzes when Group Selected
+  const handleGroupChange = async (groupId) => {
     setSelectedGroupId(groupId);
     setFiles([]); 
-    const res = await groupsAPI.getMaterials(groupId);
-    setFiles(res.data.results || res.data || []);
+    setAssignedQuizzes([]); // Clear old quizzes
+    
+    try {
+        const res = await groupsAPI.getMaterials(groupId);
+        setFiles(res.data.results || res.data || []);
+
+        // 👇 FIX: Safely grab the correct token key
+        const token = localStorage.getItem('access') || localStorage.getItem('token') || localStorage.getItem('access_token');
+
+        // Fetch pending assignments for this group
+        const quizRes = await axios.get(`http://localhost:8000/api/quizzes/assigned/?study_group=${groupId}`, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        setAssignedQuizzes(quizRes.data.results || quizRes.data || []);
+    } catch (error) {
+        console.error("Failed to load group data", error);
+    }
   };
 
-  // 3. START QUIZ (Call Backend)
-  const handleStartQuiz = async () => {
+  // 3. START OR ASSIGN QUIZ (Call Backend)
+  const handleGenerateQuiz = async (actionType) => {
     if (!selectedMaterialId) return alert("Please select a file!");
     
     setLoading(true);
     try {
-      // Call your Django API
       const res = await aiAPI.generateQuiz(selectedMaterialId, topic || "General", 5, "Medium");
       const generatedQuiz = res.data.quiz || res.data || [];
       
       if (generatedQuiz.length === 0) {
         alert("AI could not generate questions. Try a different file.");
+        setLoading(false);
+        return;
+      }
+
+      // Route the flow based on what button they clicked!
+      if (actionType === 'assign') {
+          // Open the Teacher Editor
+          setEditableQuiz(generatedQuiz);
+          setShowEditMode(true);
+          setIsConfigMode(false);
       } else {
-        setQuizData(generatedQuiz);
-        // Reset Game
-        setCurrentQuestion(0);
-        setScore(0);
-        setShowResult(false);
-        setIsAnswerChecked(false);
-        setSelectedOption(null);
+          // Play the game themselves
+          setQuizData(generatedQuiz);
+          setCurrentQuestion(0);
+          setScore(0);
+          setShowResult(false);
+          setIsAnswerChecked(false);
+          setSelectedOption(null);
       }
     } catch (err) {
       console.error(err);
-      alert("Failed to start quiz. Check backend.");
+      alert("Failed to generate quiz. Check backend.");
     } finally {
       setLoading(false);
     }
   };
 
-  // 4. GAMEPLAY LOGIC
+  // 4. ASSIGN QUIZ TO BACKEND
+  const handleAssignQuizToGroup = async () => {
+      if (!deadline) return alert("Please set a deadline for the students!");
+
+      try {
+          // 👇 FIX: Safely grab the correct token key
+          const token = localStorage.getItem('access') || localStorage.getItem('token') || localStorage.getItem('access_token');
+
+          await axios.post('http://localhost:8000/api/quizzes/assign/', {
+              study_group: selectedGroupId,
+              title: `${topic || "General"} Assignment`,
+              quiz_data: editableQuiz,
+              deadline: deadline
+          }, {
+              headers: { Authorization: `Bearer ${token}` }
+          });
+
+          alert("✅ Quiz successfully assigned to the group!");
+          setShowEditMode(false);
+          setDeadline("");
+          // Refresh the assignments list so the new quiz pops up immediately!
+          handleGroupChange(selectedGroupId);
+          
+      } catch (error) {
+          console.error(error);
+          alert("Failed to assign quiz. Only Group Owners can assign quizzes!");
+      }
+  };
+
+  // 5. PLAY ASSIGNED QUIZ
+  const handleStartAssignedQuiz = (quizItem) => {
+      setQuizData(quizItem.quiz_data);
+      setCurrentQuestion(0);
+      setScore(0);
+      setShowResult(false);
+      setIsAnswerChecked(false);
+      setSelectedOption(null);
+  };
+
+  // --- GAMEPLAY LOGIC ---
   const handleCheckAnswer = () => {
     if (!selectedOption) return;
     const correct = quizData[currentQuestion].correct_answer;
@@ -90,10 +160,8 @@ export default function AIQuiz() {
     }
   };
 
-  // Helper for Option Colors
-  const getOptionStyle = (option: string) => {
+  const getOptionStyle = (option) => {
     if (!isAnswerChecked) return selectedOption === option ? "border-primary bg-primary/10 ring-1 ring-primary" : "border-border hover:bg-muted";
-    
     const correct = quizData[currentQuestion].correct_answer;
     if (option === correct) return "border-green-500 bg-green-50 text-green-700";
     if (option === selectedOption) return "border-red-500 bg-red-50 text-red-700";
@@ -101,74 +169,125 @@ export default function AIQuiz() {
   };
 
 
-  // --- VIEW 1: QUIZ PLAYER (Active Game) ---
+  // --- VIEW 1: TEACHER EDIT MODE ---
+  if (showEditMode) {
+      return (
+          <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in">
+              <div className="flex items-center justify-between">
+                  <h2 className="text-3xl font-bold flex items-center gap-2"><Users className="text-blue-600"/> Review & Assign Quiz</h2>
+                  <Badge variant="secondary" className="text-sm">Teacher Mode</Badge>
+              </div>
+              <p className="text-muted-foreground mb-6">Edit the AI-generated questions below, set a deadline, and deploy it to your study group.</p>
+
+              {editableQuiz.map((q, index) => (
+                  <Card key={index} className="mb-6 border-l-4 border-l-blue-500 shadow-sm">
+                      <CardContent className="p-6 space-y-4">
+                          <label className="block font-bold text-sm text-muted-foreground uppercase tracking-wide">Question {index + 1}</label>
+                          <textarea 
+                              className="w-full p-3 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none"
+                              rows={2}
+                              value={q.question}
+                              onChange={(e) => {
+                                  const updatedQuiz = [...editableQuiz];
+                                  updatedQuiz[index].question = e.target.value;
+                                  setEditableQuiz(updatedQuiz);
+                              }}
+                          />
+                          <div className="grid grid-cols-2 gap-3">
+                              {q.options.map((opt, i) => (
+                                  <div key={i} className={`p-2 border rounded text-sm ${opt === q.correct_answer ? 'bg-green-50 border-green-200 text-green-800 font-medium' : 'bg-gray-50 text-gray-600'}`}>
+                                      {opt === q.correct_answer && "✅ "} {opt}
+                                  </div>
+                              ))}
+                          </div>
+                      </CardContent>
+                  </Card>
+              ))}
+
+              <Card className="bg-blue-50/50 border-blue-200">
+                  <CardContent className="p-6 flex flex-col md:flex-row gap-4 items-end">
+                      <div className="flex-1 w-full space-y-2">
+                          <label className="block font-bold flex items-center gap-2"><Calendar className="h-4 w-4"/> Set Deadline</label>
+                          <input 
+                              type="datetime-local" 
+                              className="w-full p-3 border rounded-md"
+                              value={deadline}
+                              onChange={(e) => setDeadline(e.target.value)}
+                          />
+                      </div>
+                      <div className="flex gap-3 w-full md:w-auto">
+                          <Button variant="outline" onClick={() => setShowEditMode(false)} className="w-full md:w-auto p-6">Cancel</Button>
+                          <Button onClick={handleAssignQuizToGroup} className="w-full md:w-auto bg-blue-600 hover:bg-blue-700 text-white p-6">
+                              Assign to Group
+                          </Button>
+                      </div>
+                  </CardContent>
+              </Card>
+          </div>
+      );
+  }
+
+  // --- VIEW 2: QUIZ PLAYER (Active Game) ---
   if (quizData.length > 0 && !showResult) {
-    return (
-      <div className="max-w-3xl mx-auto space-y-6 p-4 animate-in fade-in slide-in-from-bottom-4">
-        <div className="flex justify-between items-center">
-            <h2 className="text-2xl font-bold flex items-center gap-2"><Brain className="text-primary"/> AI Quiz</h2>
-            <Badge variant="outline">Q {currentQuestion + 1} / {quizData.length}</Badge>
+      return (
+        <div className="max-w-3xl mx-auto space-y-6 p-4 animate-in fade-in slide-in-from-bottom-4">
+          <div className="flex justify-between items-center">
+              <h2 className="text-2xl font-bold flex items-center gap-2"><Brain className="text-primary"/> AI Quiz</h2>
+              <Badge variant="outline">Q {currentQuestion + 1} / {quizData.length}</Badge>
+          </div>
+          <Progress value={((currentQuestion) / quizData.length) * 100} className="h-2" />
+          
+          <Card className="shadow-lg border-2">
+              <CardHeader>
+                  <CardTitle className="text-xl leading-relaxed">
+                      <Latex>{quizData[currentQuestion].question}</Latex>
+                  </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                  {quizData[currentQuestion].options.map((opt, i) => (
+                      <div key={i} onClick={() => !isAnswerChecked && setSelectedOption(opt)} 
+                           className={`p-4 rounded-lg border cursor-pointer transition-all flex justify-between items-center ${getOptionStyle(opt)}`}>
+                          <span className="font-medium text-sm"><Latex>{opt}</Latex></span>
+                          {isAnswerChecked && opt === quizData[currentQuestion].correct_answer && <CheckCircle className="text-green-600 h-5 w-5"/>}
+                          {isAnswerChecked && selectedOption === opt && opt !== quizData[currentQuestion].correct_answer && <XCircle className="text-red-600 h-5 w-5"/>}
+                      </div>
+                  ))}
+                  
+                  <div className="pt-6 flex justify-between items-center">
+                      <Button onClick={isAnswerChecked ? handleNext : handleCheckAnswer} disabled={!selectedOption} className="bg-primary ml-auto">
+                          {isAnswerChecked ? (currentQuestion + 1 === quizData.length ? "Finish Quiz" : "Next Question") : "Check Answer"}
+                      </Button>
+                  </div>
+              </CardContent>
+          </Card>
         </div>
-        <Progress value={((currentQuestion) / quizData.length) * 100} className="h-2" />
-        
-        <Card className="shadow-lg border-2">
-            <CardHeader>
-                <CardTitle className="text-xl leading-relaxed">
-                    <Latex>{quizData[currentQuestion].question}</Latex>
-                </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-                {quizData[currentQuestion].options.map((opt: string, i: number) => (
-                    <div key={i} onClick={() => !isAnswerChecked && setSelectedOption(opt)} 
-                         className={`p-4 rounded-lg border cursor-pointer transition-all flex justify-between items-center ${getOptionStyle(opt)}`}>
-                        <span className="font-medium text-sm"><Latex>{opt}</Latex></span>
-                        {isAnswerChecked && opt === quizData[currentQuestion].correct_answer && <CheckCircle className="text-green-600 h-5 w-5"/>}
-                        {isAnswerChecked && selectedOption === opt && opt !== quizData[currentQuestion].correct_answer && <XCircle className="text-red-600 h-5 w-5"/>}
-                    </div>
-                ))}
-                
-                <div className="pt-6 flex justify-between items-center">
-                    {isAnswerChecked && (
-                        <div className="text-sm text-muted-foreground italic flex-1 mr-4 bg-muted p-2 rounded">
-                            💡 {quizData[currentQuestion].explanation}
-                        </div>
-                    )}
-                    <Button onClick={isAnswerChecked ? handleNext : handleCheckAnswer} disabled={!selectedOption} className="bg-primary ml-auto">
-                        {isAnswerChecked ? (currentQuestion + 1 === quizData.length ? "Finish Quiz" : "Next Question") : "Check Answer"}
-                    </Button>
-                </div>
-            </CardContent>
-        </Card>
-      </div>
-    );
+      );
   }
 
-  // --- VIEW 2: RESULTS SCREEN ---
+  // --- VIEW 3: RESULTS SCREEN ---
   if (showResult) {
-    return (
-        <div className="flex flex-col items-center justify-center h-[60vh] text-center space-y-6 animate-in zoom-in-95">
-            <Trophy className="h-24 w-24 text-yellow-500 mb-4" />
-            <h1 className="text-4xl font-bold">Quiz Completed!</h1>
-            <p className="text-2xl text-muted-foreground">You scored <span className="text-primary font-bold">{score}</span> out of {quizData.length}</p>
-            <div className="flex gap-4">
-                <Button onClick={() => { setQuizData([]); setShowResult(false); setIsConfigMode(false); }} variant="outline">
-                    <RefreshCw className="h-4 w-4 mr-2"/> Back to Dashboard
-                </Button>
-            </div>
-        </div>
-    );
+      return (
+          <div className="flex flex-col items-center justify-center h-[60vh] text-center space-y-6 animate-in zoom-in-95">
+              <Trophy className="h-24 w-24 text-yellow-500 mb-4" />
+              <h1 className="text-4xl font-bold">Quiz Completed!</h1>
+              <p className="text-2xl text-muted-foreground">You scored <span className="text-primary font-bold">{score}</span> out of {quizData.length}</p>
+              <div className="flex gap-4">
+                  <Button onClick={() => { setQuizData([]); setShowResult(false); setIsConfigMode(false); }} variant="outline">
+                      <RefreshCw className="h-4 w-4 mr-2"/> Back to Dashboard
+                  </Button>
+              </div>
+          </div>
+      );
   }
 
-  // --- VIEW 3: DASHBOARD (Your Original UI) ---
+  // --- VIEW 4: DASHBOARD (Updated Config Form) ---
   return (
     <div className="space-y-8 animate-in fade-in">
-      {/* Header */}
       <div>
         <h1 className="text-3xl font-bold text-foreground">AI Quiz Generator</h1>
-        <p className="text-muted-foreground mt-1">Test your knowledge with AI-generated quizzes</p>
+        <p className="text-muted-foreground mt-1">Test your knowledge or assign quizzes to your study groups.</p>
       </div>
 
-      {/* Upload/Generate Section */}
       <Card className="border-border border-dashed border-2 bg-muted/50 transition-all">
         <CardContent className="pt-6">
           <div className="flex flex-col items-center justify-center py-8 text-center max-w-lg mx-auto">
@@ -178,10 +297,9 @@ export default function AIQuiz() {
             <h3 className="text-lg font-semibold text-foreground mb-2">Generate New Quiz</h3>
             
             {!isConfigMode ? (
-                // STATE A: Initial Button
                 <>
                     <p className="text-sm text-muted-foreground mb-4 max-w-md">
-                    Upload study materials and let AI create customized quizzes for you
+                    Upload study materials and let AI create customized quizzes for you.
                     </p>
                     <Button onClick={() => setIsConfigMode(true)} className="bg-primary hover:bg-primary-dark text-primary-foreground">
                     <Brain className="h-4 w-4 mr-2" />
@@ -189,7 +307,6 @@ export default function AIQuiz() {
                     </Button>
                 </>
             ) : (
-                // STATE B: Configuration Form (Injecting logic here!)
                 <div className="w-full space-y-4 bg-background p-6 rounded-lg border shadow-sm text-left animate-in slide-in-from-bottom-2">
                     <div className="space-y-2">
                         <label className="text-sm font-medium">Select Study Group</label>
@@ -209,10 +326,27 @@ export default function AIQuiz() {
                         <label className="text-sm font-medium">Topic (Optional)</label>
                         <Input placeholder="e.g. Thermodynamics" value={topic} onChange={e => setTopic(e.target.value)} />
                     </div>
-                    <div className="flex gap-2 pt-2">
-                        <Button variant="outline" onClick={() => setIsConfigMode(false)} className="w-full">Cancel</Button>
-                        <Button onClick={handleStartQuiz} disabled={loading || !selectedMaterialId} className="w-full bg-primary text-primary-foreground">
-                            {loading ? <Loader2 className="animate-spin mr-2 h-4 w-4"/> : <Brain className="mr-2 h-4 w-4"/>} Start Quiz
+                    
+                    <div className="flex flex-col sm:flex-row gap-3 pt-4">
+                        <Button variant="outline" onClick={() => setIsConfigMode(false)} className="w-full sm:w-auto">Cancel</Button>
+                        
+                        <Button 
+                            onClick={() => handleGenerateQuiz('self')} 
+                            disabled={loading || !selectedMaterialId} 
+                            variant="secondary"
+                            className="w-full font-semibold"
+                        >
+                            {loading ? <Loader2 className="animate-spin mr-2 h-4 w-4"/> : <Brain className="mr-2 h-4 w-4"/>} 
+                            Self Study
+                        </Button>
+
+                        <Button 
+                            onClick={() => handleGenerateQuiz('assign')} 
+                            disabled={loading || !selectedMaterialId} 
+                            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold"
+                        >
+                            {loading ? <Loader2 className="animate-spin mr-2 h-4 w-4"/> : <Users className="mr-2 h-4 w-4"/>} 
+                            Assign to Group
                         </Button>
                     </div>
                 </div>
@@ -221,41 +355,40 @@ export default function AIQuiz() {
         </CardContent>
       </Card>
 
-      {/* Quiz Sets (Static History for now) */}
-      <div className="space-y-4 opacity-75">
-        <h2 className="text-2xl font-bold text-foreground">Sample Quizzes</h2>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {[
-            { id: 1, title: "Calculus Final Prep", questions: 5, subject: "Mathematics", difficulty: "Hard" },
-            { id: 2, title: "Physics Fundamentals", questions: 5, subject: "Physics", difficulty: "Medium" },
-            { id: 3, title: "Chemistry Quick Review", questions: 5, subject: "Chemistry", difficulty: "Easy" },
-          ].map((quiz) => (
-            <Card key={quiz.id} className="border-border hover:shadow-md transition-shadow">
-              <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div>
-                    <CardTitle className="text-foreground">{quiz.title}</CardTitle>
-                    <CardDescription>{quiz.subject}</CardDescription>
-                  </div>
-                  <Badge variant="secondary" className={
-                      quiz.difficulty === "Easy" ? "bg-green-100 text-green-700" :
-                      quiz.difficulty === "Medium" ? "bg-yellow-100 text-yellow-700" :
-                      "bg-red-100 text-red-700"
-                    }>
-                    {quiz.difficulty}
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <p className="text-sm text-muted-foreground">{quiz.questions} questions</p>
-                <Button variant="secondary" className="w-full" disabled>
-                  Example Only
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </div>
+      {/* 👇 NEW: STUDENT PENDING ASSIGNMENTS SECTION 👇 */}
+      {selectedGroupId && assignedQuizzes.length > 0 && !isConfigMode && (
+          <div className="mt-12 animate-in slide-in-from-bottom-4">
+              <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+                  <Calendar className="text-blue-500"/> Pending Assignments
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {assignedQuizzes.map((quiz) => (
+                      <Card key={quiz.id} className="border-l-4 border-l-yellow-400 hover:shadow-md transition-all">
+                          <CardContent className="p-5 flex flex-col justify-between h-full">
+                              <div>
+                                  <div className="flex justify-between items-start mb-2">
+                                      <h3 className="font-bold text-lg">{quiz.title}</h3>
+                                      <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200">
+                                          Due: {new Date(quiz.deadline).toLocaleDateString()}
+                                      </Badge>
+                                  </div>
+                                  <p className="text-sm text-muted-foreground mb-4">
+                                      Assigned by: <span className="font-medium text-foreground">{quiz.creator_name}</span>
+                                  </p>
+                              </div>
+                              <Button 
+                                  onClick={() => handleStartAssignedQuiz(quiz)} 
+                                  className="w-full bg-slate-900 text-white hover:bg-slate-800"
+                              >
+                                  Start Assignment
+                              </Button>
+                          </CardContent>
+                      </Card>
+                  ))}
+              </div>
+          </div>
+      )}
+
     </div>
   );
 }

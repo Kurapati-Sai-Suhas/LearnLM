@@ -174,3 +174,4 @@ AUTH_USER_MODEL = 'groups.User'
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+GEMINI_API_KEY = "AIzaSyAyv2GkvtQtJVSub-yUbWvsgwnQCfQ3j3Q"

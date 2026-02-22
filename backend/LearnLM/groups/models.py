@@ -1,10 +1,10 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
+from datetime import timedelta
 
-# --- 1. The Custom User Model (From previous discussion) ---
 class User(AbstractUser):
-    # We inherit standard fields (username, password) and add our own:
     email = models.EmailField(unique=True)
+    skillset = models.CharField(max_length=255, blank=True)
     bio = models.TextField(blank=True, null=True)
     university = models.CharField(max_length=100, blank=True, null=True)
     ROLE_CHOICES = (
@@ -16,17 +16,12 @@ class User(AbstractUser):
     def __str__(self):
         return self.username
 
-# --- 2. The Study Group Model ---
+
 class StudyGroup(models.Model):
     name = models.CharField(max_length=100)
     description = models.TextField()
-    # RELATIONSHIP 1: The Creator (One-to-Many)
-    # If the User is deleted, 'CASCADE' means delete their created groups too.
     creator = models.ForeignKey(User, on_delete=models.CASCADE, related_name='created_groups')
-    # RELATIONSHIP 2: The Members (Many-to-Many)
-    # A group has many members; members can join many groups.
     members = models.ManyToManyField(User, related_name='joined_groups', blank=True)
-    # Use this code to let people join
     join_code = models.CharField(max_length=10, unique=True)
     capacity = models.IntegerField(default=50)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -34,8 +29,8 @@ class StudyGroup(models.Model):
     def __str__(self):
         return self.name
 
-# --- 3. The Subject/Tag Model (Optional but recommended) ---
-# This allows users to filter groups by "Math", "Physics", etc.
+
+
 class Subject(models.Model):
     name = models.CharField(max_length=50)
     groups = models.ManyToManyField(StudyGroup, related_name='subjects')
@@ -53,3 +48,72 @@ class StudyMaterial(models.Model):
 
     def __str__(self):
         return self.title
+
+class UserActivityLog(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    activity_type = models.CharField(max_length=100)
+    timestamp = models.DateTimeField(default=timedelta(seconds=0))
+    last_updated = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.user.username} - {self.activity_type} : {self.timestamp}"
+
+
+from datetime import timedelta 
+from django.conf import settings
+
+class UserActivity(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    section_name = models.CharField(max_length=255)
+    time_spent = models.DurationField(default=timedelta(seconds=0))
+    last_active = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('user', 'section_name')
+
+    def __str__(self):
+        return f"{self.user.username} - {self.section_name}: {self.time_spent}"
+class QuizResult(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    study_group = models.ForeignKey(StudyGroup, on_delete=models.CASCADE, null=True, blank=True)
+    score = models.IntegerField()
+    total_questions = models.IntegerField(default=5)
+    topic = models.CharField(max_length=200) # e.g. "Physics"
+    date_taken = models.DateTimeField(auto_now_add=True)
+    AssignedQuiz = models.ForeignKey('AssignedQuiz', on_delete=models.SET_NULL, null=True, blank=True)
+
+    def __str__(self):
+        return f"{self.user.username} - {self.topic}: {self.score}"
+
+class AssignedQuiz(models.Model):
+    study_group = models.ForeignKey(StudyGroup, on_delete=models.CASCADE)
+    topic = models.CharField(max_length=200)
+    quiz_data = models.JSONField()
+    assigned_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
+    assigned_at = models.DateTimeField(auto_now_add=True)
+    deadline = models.DateTimeField(default=timedelta(days=7))
+
+    def __str__(self):
+        return f"{self.study_group.name} - {self.topic} (Assigned by {self.assigned_by.username if self.assigned_by else 'Unknown'})"
+
+class DoubtChatHistory(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    material = models.ForeignKey(StudyMaterial, on_delete=models.CASCADE)
+    question = models.TextField()
+    answer = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['created_at']
+
+class Connection(models.Model):
+    sender = models.ForeignKey(User, on_delete=models.CASCADE, related_name='connections_initiated')
+    receiver = models.ForeignKey(User, on_delete=models.CASCADE, related_name='connections_received')
+    created_at = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(max_length=20, choices=[('pending', 'Pending'), ('accepted', 'Accepted'), ('rejected', 'Rejected')])
+
+    class Meta:
+        unique_together = ('sender', 'receiver')
+
+    def __str__(self):
+        return f"{self.sender.username} <-> {self.receiver.username}"

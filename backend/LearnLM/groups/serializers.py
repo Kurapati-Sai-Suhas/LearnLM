@@ -1,5 +1,7 @@
+
+
 from rest_framework import serializers
-from .models import StudyGroup, StudyMaterial
+from .models import StudyGroup, StudyMaterial, QuizResult,Connection
 from django.contrib.auth import get_user_model
 
 User = get_user_model()
@@ -58,3 +60,42 @@ class StudyMaterialSerializer(serializers.ModelSerializer):
         model = StudyMaterial
         fields = ['id', 'title', 'file', 'uploaded_by', 'study_group', 'upload_date']
         read_only_fields = ['uploaded_by', 'upload_date']
+
+class QuizResultSerializer(serializers.ModelSerializer):
+    user = UserDisplaySerializer(read_only=True)
+    study_group = StudyGroupMiniSerializer(read_only=True)
+
+    class Meta:
+        model = QuizResult
+        fields = ['id', 'user', 'study_group', 'score', 'taken_at']
+        read_only_fields = ['user', 'study_group', 'taken_at']
+
+class AssignedQuizSerializer(serializers.ModelSerializer):
+    creator_name = serializers.ReadOnlyField(source='creator.username')
+    class Meta:
+        model = StudyGroup
+        fields = ['id', 'name', 'description', 'creator', 'members', 'join_code', 'created_at', 'capacity']
+
+class UserBasicSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'email', 'first_name', 'last_name']
+
+# 2. The Profile Serializer
+class ProfileSerializer(serializers.ModelSerializer):
+    # This nests the User info inside the Profile, so React gets everything at once!
+    user = UserBasicSerializer(read_only=True)
+    class Meta:
+        model = User
+        # Add whatever fields you put in your models.py!
+        fields = ['id', 'user', 'skills', 'achievements', 'major', 'graduation_year', 'bio']
+
+# 3. The Friend Request / Connection Serializer
+class ConnectionSerializer(serializers.ModelSerializer):
+    # When we fetch a friend request, we want to see WHO sent it and WHO received it
+    sender = UserBasicSerializer(read_only=True)
+    receiver = UserBasicSerializer(read_only=True)
+
+    class Meta:
+        model = Connection
+        fields = ['id', 'sender', 'receiver', 'status', 'created_at']
