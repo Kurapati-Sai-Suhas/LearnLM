@@ -17,6 +17,11 @@ from .views import (
     ListAssignedQuizView,
     AssignedQuizCreateView,
     ManageAssignedQuizView,
+    getGroupMembers,
+    UserSearchView,
+    FriendRequestView,
+    FriendRequestActionView,
+    FriendsListView
     # <--- Added this
 
 )
@@ -42,11 +47,17 @@ urlpatterns = [
 
     # 4. AI Features 🧠
     path('ai/flashcards/', AIFlashcardView.as_view(), name='ai-flashcards'),
-    path('ai/quiz/', AIQuizView.as_view(), name='ai-quiz'),      # 👈 The missing link for Quiz
+    path('ai/quiz/', AIQuizView.as_view(), name='ai-quiz'),
     path('ai/doubt/', AIDoubtView.as_view(), name='ai-doubt'),
     path('analytics/charts/', analytics_data, name='analytics-charts'),
     path('quiz/save/', QuizResultCreateView.as_view(), name='save-quiz'),
     path('quizzes/assign/', AssignedQuizCreateView.as_view(), name='assign-quiz'),
     path('quizzes/assigned/', ListAssignedQuizView.as_view(), name='list-assigned-quizzes'),
-    path('quizzes/assigned/<int:pk>/', ManageAssignedQuizView.as_view(), name='manage-assigned-quiz')
+    path('quizzes/assigned/<int:pk>/', ManageAssignedQuizView.as_view(), name='manage-assigned-quiz'),
+    path('groups/<int:group_id>/members/', getGroupMembers.as_view(), name='group-members'),
+    path('users/search/', UserSearchView.as_view(), name='user-search'),
+    path('friends/', FriendsListView.as_view(), name='friends-list'),
+    path('friends/request/', FriendRequestView.as_view(), name='friend-request'),
+    path('friends/request/<int:connection_id>/action/', FriendRequestActionView.as_view(), name='friend-action'),
+
 ]

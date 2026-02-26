@@ -1,24 +1,20 @@
 import os
 from django.conf import settings
-from rest_framework import viewsets, generics, filters, permissions, parsers
+from rest_framework import viewsets, generics, filters, permissions, parsers, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from django_filters.rest_framework import DjangoFilterBackend
 from django.contrib.auth import get_user_model
-from rest_framework import status
 from rest_framework.pagination import PageNumberPagination
-from django.db.models import Avg, Sum
-from rest_framework.decorators import api_view, permission_classes
+from django.db.models import Avg, Sum, Q
 from rest_framework.exceptions import PermissionDenied
 
-# 👇 1. UPDATED IMPORT: Bring in the new AIService class
 from .ai_services import AIService
 from .utils import extract_text_from_file, load_image_for_ai
-from .models import StudyGroup, StudyMaterial, QuizResult, UserActivity, AssignedQuiz
-from .models import StudyGroup, StudyMaterial, QuizResult, UserActivity,AssignedQuiz
-from .serializers import QuizResultSerializer, StudyGroupSerializer, UserSerializer, StudyMaterialSerializer,AssignedQuizSerializer
+from .models import StudyGroup, StudyMaterial, QuizResult, UserActivity, AssignedQuiz, Connection, DirectMessage
+from .serializers import ConnectionSerializer, QuizResultSerializer, StudyGroupSerializer, UserBasicSerializer, UserSerializer, StudyMaterialSerializer, AssignedQuizSerializer
 
 User = get_user_model()
 
@@ -32,7 +28,6 @@ class CreateUserView(generics.CreateAPIView):
     permission_classes = [AllowAny]
 
 class StudyGroupViewSet(viewsets.ModelViewSet):
-    queryset = StudyGroup.objects.all().order_by('-created_at')
     serializer_class = StudyGroupSerializer
     permission_classes = [IsAuthenticated]
     
@@ -41,8 +36,16 @@ class StudyGroupViewSet(viewsets.ModelViewSet):
     search_fields = ['name', 'description', 'join_code']
     pagination_class = LargePagination 
 
+    def get_queryset(self):
+        user = self.request.user
+        return StudyGroup.objects.filter(
+            Q(members=user) | Q(creator=user)
+        ).distinct().order_by('-created_at')
+
     def perform_create(self, serializer):
-        serializer.save(creator=self.request.user)
+        # 👇 FIX 1: Automatically add the creator to the members list upon creation!
+        group = serializer.save(creator=self.request.user)
+        group.members.add(self.request.user)
 
     @action(detail=False, methods=['post'])
     def join(self, request):
@@ -74,7 +77,6 @@ class MaterialViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     parser_classes = (parsers.MultiPartParser, parsers.FormParser)
 
-
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ['study_group', 'uploaded_by']
     search_fields = ['title', 'study_group__name']
@@ -84,18 +86,23 @@ class MaterialViewSet(viewsets.ModelViewSet):
         print(f"📦 Uploading file... Group ID: {group_id}")
         serializer.save(uploaded_by=self.request.user, study_group_id=group_id)
 
+
 class UserDashboardStats(APIView):
     permission_classes = [IsAuthenticated]
+    
     def get(self, request):
         user = request.user
-        joined_count = StudyGroup.objects.filter(members=user).count()
+        active_groups_count = StudyGroup.objects.filter(Q(members=user) | Q(creator=user)).distinct().count()
         created_count = StudyGroup.objects.filter(creator=user).count()
+        joined_count = StudyGroup.objects.filter(members=user).count()
+        
         return Response({
             "username": user.username,
-            "active_groups": joined_count + created_count,
+            "active_groups": active_groups_count,
             "created_groups": created_count,
             "joined_groups": joined_count,
             "study_hours": 0,
+            "quizzes_taken": 0,
             "achievement_points": 100
         })
 
@@ -105,7 +112,10 @@ class UserProfileView(APIView):
         serializer = UserSerializer(request.user)
         return Response(serializer.data)
 
+
 class AIFlashcardView(APIView):
+    permission_classes = [IsAuthenticated]
+    
     def post(self, request):
         material_id = request.data.get('materialId')
         topic = request.data.get('topic', 'General')
@@ -114,16 +124,20 @@ class AIFlashcardView(APIView):
         except StudyMaterial.DoesNotExist:
             return Response({"error": "File not found"}, status=404)
 
-        extracted_text = extract_text_from_file(material.file.name)
-        if not extracted_text: return Response({"error": "PDF is empty or unreadable"}, status=400)
+        file_path = material.file.path
+        extracted_text = extract_text_from_file(file_path)
+        
+        if not extracted_text: 
+            return Response({"error": "PDF is empty or unreadable"}, status=400)
 
-        # 👇 2. UPDATED: Call the new class method
         print(f"🚀 Asking AI to generate cards for topic: {topic}")
         flashcards = AIService.generate_flashcards(extracted_text, num_cards=10)
 
         return Response({"flashcards": flashcards}, status=200)
 
 class AIDoubtView(APIView):
+    permission_classes = [IsAuthenticated]
+    
     def post(self, request):
         material_id = request.data.get('materialId')
         question = request.data.get('question')
@@ -132,21 +146,22 @@ class AIDoubtView(APIView):
             material = StudyMaterial.objects.get(id=material_id)
         except StudyMaterial.DoesNotExist:
             return Response({"error": "File not found"}, status=404)
+            
         file_path = material.file.path
         extension = os.path.splitext(file_path)[1].lower()
 
-        # 🚦 THE TRAFFIC COP LOGIC 🚦
         if extension in ['.jpg', '.jpeg', '.png']:
-            # Route B: It's an image! Use Vision.
             img_obj = load_image_for_ai(file_path)
             answer = AIService.explain_image(img_obj, question)
         else:
-            # Route A: It's a Document! Extract text.
             extracted_text = extract_text_from_file(file_path)
             answer = AIService.get_answer(question, extracted_text)
 
         return Response({"answer": answer}, status=200)
+
 class AIQuizView(APIView):
+    permission_classes = [IsAuthenticated]
+    
     def post(self, request):
         material_id = request.data.get('materialId')
         topic = request.data.get('topic', 'General')
@@ -156,9 +171,7 @@ class AIQuizView(APIView):
         except StudyMaterial.DoesNotExist:
             return Response({"error": "File not found"}, status=404)
 
-        # 👇 BULLETPROOF FILE PATH 👇
         file_path = os.path.join(settings.MEDIA_ROOT, material.file.name)
-
         extracted_text = extract_text_from_file(file_path)
 
         if not extracted_text: 
@@ -174,7 +187,6 @@ class QuizResultCreateView(generics.CreateAPIView):
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
-
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -219,6 +231,7 @@ class AssignedQuizCreateView(generics.CreateAPIView):
     queryset = AssignedQuiz.objects.all()
     serializer_class = AssignedQuizSerializer
     permission_classes = [IsAuthenticated]
+    
     def perform_create(self, serializer):
         group_id = self.request.data.get('study_group')
         try:
@@ -233,32 +246,103 @@ class AssignedQuizCreateView(generics.CreateAPIView):
 class ListAssignedQuizView(generics.ListAPIView):
     serializer_class = AssignedQuizSerializer
     permission_classes = [IsAuthenticated]
+    
     def get_queryset(self):
-        # The frontend will pass the group ID like ?study_group=7
         group_id = self.request.query_params.get('study_group')
-        # Returns all quizzes for this group, ordered by deadline (closest first)
         if group_id:
             return AssignedQuiz.objects.filter(study_group_id=group_id).order_by('deadline')
         return AssignedQuiz.objects.none()
-    
 
 class ManageAssignedQuizView(generics.RetrieveUpdateDestroyAPIView):
-    """ Allows Group Owners to Edit or Delete an existing assigned quiz """
     queryset = AssignedQuiz.objects.all()
     serializer_class = AssignedQuizSerializer
     permission_classes = [IsAuthenticated]
 
     def perform_update(self, serializer):
-        quiz = self.get_object() # Get the specific quiz from the database
-        # 🛡️ SECURITY CHECK: Prevent students from hacking the quiz!
+        quiz = self.get_object()
         if quiz.study_group.creator != self.request.user:
             raise PermissionDenied("Only the Group Owner can edit this quiz!")
-
         serializer.save()
 
     def perform_destroy(self, instance):
-        # 🛡️ SECURITY CHECK: Only owner can delete
         if instance.study_group.creator != self.request.user:
             raise PermissionDenied("Only the Group Owner can delete this quiz!")
         instance.delete()
 
+class getGroupMembers(generics.ListAPIView):
+    serializer_class = UserSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        group_id = self.kwargs['group_id']
+        try:
+            group = StudyGroup.objects.get(id=group_id)
+            # 👇 FIX 2: Manually bundle the creator into the member list if they aren't already there!
+            return User.objects.filter(Q(id__in=group.members.all()) | Q(id=group.creator.id)).distinct()
+        except StudyGroup.DoesNotExist:
+            return User.objects.none()
+
+class UserSearchView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        query = request.query_params.get('q', '')
+        if len(query) < 3:
+            return Response({"users": []})
+        users = User.objects.filter(username__icontains=query).exclude(id=request.user.id)[:10]
+        serializer = UserBasicSerializer(users, many=True)
+        return Response({"users": serializer.data})
+
+
+class FriendRequestView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        receiver_id = request.data.get('receiver_id')
+        try:
+            receiver = User.objects.get(id=receiver_id)
+        except User.DoesNotExist:
+            return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+        if Connection.objects.filter(sender=request.user, receiver=receiver).exists() or \
+           Connection.objects.filter(sender=receiver, receiver=request.user).exists():
+            return Response({"error": "Connection already exists or is pending."}, status=status.HTTP_400_BAD_REQUEST)
+
+        Connection.objects.create(sender=request.user, receiver=receiver, status='pending')
+        return Response({"message": "Friend request sent!"}, status=status.HTTP_201_CREATED)
+
+
+class FriendRequestActionView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, connection_id):
+        action = request.data.get('action')
+        try:
+            connection = Connection.objects.get(id=connection_id, receiver=request.user, status='pending')
+        except Connection.DoesNotExist:
+            return Response({"error": "Request not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if action == 'accept':
+            connection.status = 'accepted'
+            connection.save()
+            return Response({"message": "Friend request accepted!"})
+        elif action == 'reject':
+            connection.status = 'rejected'
+            connection.save()
+            return Response({"message": "Friend request rejected."})
+        return Response({"error": "Invalid action."}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class FriendsListView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        pending_requests = Connection.objects.filter(receiver=request.user, status='pending')
+        accepted_connections = Connection.objects.filter(
+            Q(sender=request.user) | Q(receiver=request.user),
+            status='accepted'
+        )
+
+        return Response({
+            "pending": ConnectionSerializer(pending_requests, many=True).data,
+            "friends": ConnectionSerializer(accepted_connections, many=True).data
+        })

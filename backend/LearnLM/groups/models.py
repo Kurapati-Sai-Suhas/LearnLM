@@ -59,7 +59,7 @@ class UserActivityLog(models.Model):
         return f"{self.user.username} - {self.activity_type} : {self.timestamp}"
 
 
-from datetime import timedelta 
+from datetime import timedelta
 from django.conf import settings
 
 class UserActivity(models.Model):
@@ -105,15 +105,33 @@ class DoubtChatHistory(models.Model):
 
     class Meta:
         ordering = ['created_at']
-
 class Connection(models.Model):
-    sender = models.ForeignKey(User, on_delete=models.CASCADE, related_name='connections_initiated')
-    receiver = models.ForeignKey(User, on_delete=models.CASCADE, related_name='connections_received')
+    STATUS_CHOICES = (
+        ('pending', 'Pending'),
+        ('accepted', 'Accepted'),
+        ('rejected', 'Rejected'),
+    )
+    sender = models.ForeignKey(User, related_name='sent_requests', on_delete=models.CASCADE)
+    receiver = models.ForeignKey(User, related_name='received_requests', on_delete=models.CASCADE)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     created_at = models.DateTimeField(auto_now_add=True)
-    status = models.CharField(max_length=20, choices=[('pending', 'Pending'), ('accepted', 'Accepted'), ('rejected', 'Rejected')])
 
     class Meta:
         unique_together = ('sender', 'receiver')
 
     def __str__(self):
-        return f"{self.sender.username} <-> {self.receiver.username}"
+        return f"{self.sender.username} -> {self.receiver.username} ({self.status})"
+
+
+class DirectMessage(models.Model):
+    sender = models.ForeignKey(User, related_name='sent_messages', on_delete=models.CASCADE)
+    receiver = models.ForeignKey(User, related_name='received_messages', on_delete=models.CASCADE)
+    content = models.TextField()
+    timestamp = models.DateTimeField(auto_now_add=True)
+    is_read = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ['timestamp']
+
+    def __str__(self):
+        return f"From {self.sender.username} to {self.receiver.username}"

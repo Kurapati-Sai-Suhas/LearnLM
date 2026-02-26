@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
-import axios from "axios"; 
-import { groupsAPI, aiAPI } from "@/services/api"; 
+import api, { groupsAPI, aiAPI, userAPI } from "@/services/api"; 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -12,61 +11,62 @@ import 'katex/dist/katex.min.css';
 import Latex from 'react-latex-next';
 
 export default function AIQuiz() {
-  // --- STATE: DATA LOADING ---
-  const [groups, setGroups] = useState([]);
-  const [files, setFiles] = useState([]);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [groups, setGroups] = useState<any[]>([]);
+  const [files, setFiles] = useState<any[]>([]);
   
-  // --- STATE: SELECTION ---
-  const [selectedGroupId, setSelectedGroupId] = useState("");
+  const [selectedGroup, setSelectedGroup] = useState<any>(null);
   const [selectedMaterialId, setSelectedMaterialId] = useState("");
   const [topic, setTopic] = useState("");
   const [isConfigMode, setIsConfigMode] = useState(false); 
   const [loading, setLoading] = useState(false);
 
-  // --- NEW STATE: LMS TEACHER MODE & STUDENT ASSIGNMENTS ---
   const [showEditMode, setShowEditMode] = useState(false);
-  const [editableQuiz, setEditableQuiz] = useState([]);
+  const [editableQuiz, setEditableQuiz] = useState<any[]>([]);
   const [deadline, setDeadline] = useState("");
-  const [assignedQuizzes, setAssignedQuizzes] = useState([]); // 👈 NEW STATE
+  const [assignedQuizzes, setAssignedQuizzes] = useState<any[]>([]);
 
-  // --- STATE: QUIZ GAMEPLAY ---
-  const [quizData, setQuizData] = useState([]);
+  const [quizData, setQuizData] = useState<any[]>([]);
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [score, setScore] = useState(0);
   const [showResult, setShowResult] = useState(false);
-  const [selectedOption, setSelectedOption] = useState(null);
+  const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [isAnswerChecked, setIsAnswerChecked] = useState(false);
 
-  // 1. Load Groups on Mount
   useEffect(() => {
-    groupsAPI.getAll().then(res => setGroups(res.data.results || res.data || []));
+    const loadInitialData = async () => {
+        try {
+            const userRes = await userAPI.getProfile();
+            setCurrentUser(userRes.data);
+
+            const groupsRes = await groupsAPI.getAll();
+            setGroups(groupsRes.data.results || groupsRes.data || []);
+        } catch (err) {
+            console.error("Failed to load initial data", err);
+        }
+    };
+    loadInitialData();
   }, []);
 
-  // 2. Load Files & Pending Quizzes when Group Selected
-  const handleGroupChange = async (groupId) => {
-    setSelectedGroupId(groupId);
+  const handleGroupChange = async (groupId: string) => {
+    const groupObj = groups.find(g => String(g.id) === String(groupId));
+    setSelectedGroup(groupObj);
+    
     setFiles([]); 
-    setAssignedQuizzes([]); // Clear old quizzes
+    setAssignedQuizzes([]);
     
     try {
         const res = await groupsAPI.getMaterials(groupId);
         setFiles(res.data.results || res.data || []);
 
-        // 👇 FIX: Safely grab the correct token key
-        const token = localStorage.getItem('access') || localStorage.getItem('token') || localStorage.getItem('access_token');
-
-        // Fetch pending assignments for this group
-        const quizRes = await axios.get(`http://localhost:8000/api/quizzes/assigned/?study_group=${groupId}`, {
-            headers: { Authorization: `Bearer ${token}` }
-        });
+        const quizRes = await api.get(`/quizzes/assigned/?study_group=${groupId}`);
         setAssignedQuizzes(quizRes.data.results || quizRes.data || []);
     } catch (error) {
         console.error("Failed to load group data", error);
     }
   };
 
-  // 3. START OR ASSIGN QUIZ (Call Backend)
-  const handleGenerateQuiz = async (actionType) => {
+  const handleGenerateQuiz = async (actionType: 'self' | 'assign') => {
     if (!selectedMaterialId) return alert("Please select a file!");
     
     setLoading(true);
@@ -80,14 +80,11 @@ export default function AIQuiz() {
         return;
       }
 
-      // Route the flow based on what button they clicked!
       if (actionType === 'assign') {
-          // Open the Teacher Editor
           setEditableQuiz(generatedQuiz);
           setShowEditMode(true);
           setIsConfigMode(false);
       } else {
-          // Play the game themselves
           setQuizData(generatedQuiz);
           setCurrentQuestion(0);
           setScore(0);
@@ -103,37 +100,44 @@ export default function AIQuiz() {
     }
   };
 
-  // 4. ASSIGN QUIZ TO BACKEND
-  const handleAssignQuizToGroup = async () => {
+const handleAssignQuizToGroup = async () => {
       if (!deadline) return alert("Please set a deadline for the students!");
+      if (!selectedGroup) return;
 
       try {
-          // 👇 FIX: Safely grab the correct token key
-          const token = localStorage.getItem('access') || localStorage.getItem('token') || localStorage.getItem('access_token');
-
-          await axios.post('http://localhost:8000/api/quizzes/assign/', {
-              study_group: selectedGroupId,
-              title: `${topic || "General"} Assignment`,
+          await api.post('/quizzes/assign/', {
+              study_group: selectedGroup.id,
+              // 👇 THE FIX: Only sending 'name' and 'description' to perfectly match Django!
+              name: `${topic || "General"} Assignment`,
+              description: `Please complete this AI-generated assignment on ${topic || "General"}.`,
               quiz_data: editableQuiz,
               deadline: deadline
-          }, {
-              headers: { Authorization: `Bearer ${token}` }
           });
 
           alert("✅ Quiz successfully assigned to the group!");
           setShowEditMode(false);
           setDeadline("");
-          // Refresh the assignments list so the new quiz pops up immediately!
-          handleGroupChange(selectedGroupId);
+          handleGroupChange(selectedGroup.id);
           
-      } catch (error) {
-          console.error(error);
-          alert("Failed to assign quiz. Only Group Owners can assign quizzes!");
+      } catch (error: any) {
+          console.error("Assignment Error Payload:", error.response?.data);
+          const errorData = error.response?.data;
+          let errorMsg = "Failed to assign quiz.";
+          
+          if (errorData) {
+              if (errorData.error) {
+                  errorMsg = errorData.error;
+              } else if (typeof errorData === 'object') {
+                  const firstKey = Object.keys(errorData)[0];
+                  errorMsg = `${firstKey.toUpperCase()}: ${errorData[firstKey]}`;
+              }
+          }
+          
+          alert(`Error: ${errorMsg}`);
       }
   };
-
-  // 5. PLAY ASSIGNED QUIZ
-  const handleStartAssignedQuiz = (quizItem) => {
+  
+  const handleStartAssignedQuiz = (quizItem: any) => {
       setQuizData(quizItem.quiz_data);
       setCurrentQuestion(0);
       setScore(0);
@@ -142,7 +146,6 @@ export default function AIQuiz() {
       setSelectedOption(null);
   };
 
-  // --- GAMEPLAY LOGIC ---
   const handleCheckAnswer = () => {
     if (!selectedOption) return;
     const correct = quizData[currentQuestion].correct_answer;
@@ -160,7 +163,7 @@ export default function AIQuiz() {
     }
   };
 
-  const getOptionStyle = (option) => {
+  const getOptionStyle = (option: string) => {
     if (!isAnswerChecked) return selectedOption === option ? "border-primary bg-primary/10 ring-1 ring-primary" : "border-border hover:bg-muted";
     const correct = quizData[currentQuestion].correct_answer;
     if (option === correct) return "border-green-500 bg-green-50 text-green-700";
@@ -168,8 +171,6 @@ export default function AIQuiz() {
     return "opacity-50";
   };
 
-
-  // --- VIEW 1: TEACHER EDIT MODE ---
   if (showEditMode) {
       return (
           <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in">
@@ -194,7 +195,7 @@ export default function AIQuiz() {
                               }}
                           />
                           <div className="grid grid-cols-2 gap-3">
-                              {q.options.map((opt, i) => (
+                              {q.options.map((opt: string, i: number) => (
                                   <div key={i} className={`p-2 border rounded text-sm ${opt === q.correct_answer ? 'bg-green-50 border-green-200 text-green-800 font-medium' : 'bg-gray-50 text-gray-600'}`}>
                                       {opt === q.correct_answer && "✅ "} {opt}
                                   </div>
@@ -227,7 +228,6 @@ export default function AIQuiz() {
       );
   }
 
-  // --- VIEW 2: QUIZ PLAYER (Active Game) ---
   if (quizData.length > 0 && !showResult) {
       return (
         <div className="max-w-3xl mx-auto space-y-6 p-4 animate-in fade-in slide-in-from-bottom-4">
@@ -244,7 +244,7 @@ export default function AIQuiz() {
                   </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                  {quizData[currentQuestion].options.map((opt, i) => (
+                  {quizData[currentQuestion].options.map((opt: string, i: number) => (
                       <div key={i} onClick={() => !isAnswerChecked && setSelectedOption(opt)} 
                            className={`p-4 rounded-lg border cursor-pointer transition-all flex justify-between items-center ${getOptionStyle(opt)}`}>
                           <span className="font-medium text-sm"><Latex>{opt}</Latex></span>
@@ -254,7 +254,7 @@ export default function AIQuiz() {
                   ))}
                   
                   <div className="pt-6 flex justify-between items-center">
-                      <Button onClick={isAnswerChecked ? handleNext : handleCheckAnswer} disabled={!selectedOption} className="bg-primary ml-auto">
+                      <Button onClick={isAnswerChecked ? handleNext : handleCheckAnswer} disabled={!selectedOption} className="bg-primary ml-auto text-white">
                           {isAnswerChecked ? (currentQuestion + 1 === quizData.length ? "Finish Quiz" : "Next Question") : "Check Answer"}
                       </Button>
                   </div>
@@ -264,7 +264,6 @@ export default function AIQuiz() {
       );
   }
 
-  // --- VIEW 3: RESULTS SCREEN ---
   if (showResult) {
       return (
           <div className="flex flex-col items-center justify-center h-[60vh] text-center space-y-6 animate-in zoom-in-95">
@@ -280,7 +279,8 @@ export default function AIQuiz() {
       );
   }
 
-  // --- VIEW 4: DASHBOARD (Updated Config Form) ---
+  const isGroupCreator = selectedGroup?.creator === currentUser?.id || selectedGroup?.creator?.id === currentUser?.id;
+
   return (
     <div className="space-y-8 animate-in fade-in">
       <div>
@@ -317,7 +317,7 @@ export default function AIQuiz() {
                     </div>
                     <div className="space-y-2">
                         <label className="text-sm font-medium">Select Document</label>
-                        <Select onValueChange={setSelectedMaterialId} disabled={!selectedGroupId}>
+                        <Select onValueChange={setSelectedMaterialId} disabled={!selectedGroup}>
                             <SelectTrigger><SelectValue placeholder={files.length === 0 ? "Select Group First" : "Pick a File"} /></SelectTrigger>
                             <SelectContent>{files.map(f => <SelectItem key={f.id} value={String(f.id)}>{f.title}</SelectItem>)}</SelectContent>
                         </Select>
@@ -340,14 +340,16 @@ export default function AIQuiz() {
                             Self Study
                         </Button>
 
-                        <Button 
-                            onClick={() => handleGenerateQuiz('assign')} 
-                            disabled={loading || !selectedMaterialId} 
-                            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold"
-                        >
-                            {loading ? <Loader2 className="animate-spin mr-2 h-4 w-4"/> : <Users className="mr-2 h-4 w-4"/>} 
-                            Assign to Group
-                        </Button>
+                        {isGroupCreator && (
+                            <Button 
+                                onClick={() => handleGenerateQuiz('assign')} 
+                                disabled={loading || !selectedMaterialId} 
+                                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold"
+                            >
+                                {loading ? <Loader2 className="animate-spin mr-2 h-4 w-4"/> : <Users className="mr-2 h-4 w-4"/>} 
+                                Assign to Group
+                            </Button>
+                        )}
                     </div>
                 </div>
             )}
@@ -355,8 +357,7 @@ export default function AIQuiz() {
         </CardContent>
       </Card>
 
-      {/* 👇 NEW: STUDENT PENDING ASSIGNMENTS SECTION 👇 */}
-      {selectedGroupId && assignedQuizzes.length > 0 && !isConfigMode && (
+      {selectedGroup && assignedQuizzes.length > 0 && !isConfigMode && (
           <div className="mt-12 animate-in slide-in-from-bottom-4">
               <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
                   <Calendar className="text-blue-500"/> Pending Assignments
@@ -367,7 +368,7 @@ export default function AIQuiz() {
                           <CardContent className="p-5 flex flex-col justify-between h-full">
                               <div>
                                   <div className="flex justify-between items-start mb-2">
-                                      <h3 className="font-bold text-lg">{quiz.title}</h3>
+                                      <h3 className="font-bold text-lg">{quiz.name || quiz.title || "Assignment"}</h3>
                                       <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200">
                                           Due: {new Date(quiz.deadline).toLocaleDateString()}
                                       </Badge>
@@ -378,7 +379,7 @@ export default function AIQuiz() {
                               </div>
                               <Button 
                                   onClick={() => handleStartAssignedQuiz(quiz)} 
-                                  className="w-full bg-slate-900 text-white hover:bg-slate-800"
+                                  className="w-full bg-blue-600 text-white hover:bg-blue-700"
                               >
                                   Start Assignment
                               </Button>

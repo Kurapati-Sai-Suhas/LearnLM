@@ -1,57 +1,35 @@
-import { useEffect, useState } from "react";
-import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
-import { AppSidebar } from "./AppSidebar";
-import { userAPI } from "@/services/api"; 
-import logo from "@/assets/logo.jpg";
+import { SidebarProvider } from "@/components/ui/sidebar";
+import { AppSidebar } from "./AppSidebar"; 
+import { useTheme } from "@/components/theme-provider";
+import { Button } from "@/components/ui/button";
+import { Sun, Moon } from "lucide-react";
 
-export function DashboardLayout({ children }) {
-  // 1. Initial State
-  const [user, setUser] = useState({ 
-    username: "Loading...", 
-    email: "student@example.com" 
-  });
-
-  // 2. Fetch User Profile
-  useEffect(() => {
-    const loadUser = async () => {
-      try {
-        console.log("👤 Layout: Fetching profile...");
-        const res = await userAPI.getProfile();
-        
-        // Check if we actually got a username, otherwise use Guest
-        const userData = res.data || {};
-        const finalUser = {
-            username: userData.username || "Guest",
-            email: userData.email || "guest@example.com"
-        };
-        
-        console.log("👤 Layout: User loaded:", finalUser);
-        setUser(finalUser);
-        
-      } catch (error) {
-        console.error("Layout profile load error:", error);
-        setUser({ username: "Guest", email: "guest@example.com" });
-      }
-    };
-    loadUser();
-  }, []);
+export function DashboardLayout({ children }: { children: React.ReactNode }) {
+  const { theme, setTheme } = useTheme();
 
   return (
-    <SidebarProvider>
-      <div className="flex min-h-screen w-full bg-background">
-        {/* Pass the updated user state to sidebar */}
-        <AppSidebar user={user} />
+    // 👇 Added defaultOpen={true} to ensure it starts open
+    <SidebarProvider defaultOpen={true}>
+      <AppSidebar />
+      <main className="flex-1 flex flex-col h-screen overflow-hidden bg-slate-50 dark:bg-background transition-colors duration-300">
         
-        <div className="flex-1 flex flex-col">
-          <header className="sticky top-0 z-10 flex h-16 items-center justify-between gap-4 border-b bg-background px-6">
-            <SidebarTrigger className="text-foreground" />
-            <img src={logo} alt="Learn LM Logo" className="h-10 w-auto object-contain" />
-          </header>
-          <main className="flex-1 p-6">
-            {children}
-          </main>
+        {/* 🌟 BULLETPROOF TOP HEADER 🌟 */}
+        <header className="h-16 flex items-center justify-end px-6 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 shrink-0 z-50">
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            className="rounded-full shadow-sm hover:shadow-md transition-all duration-300 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+          >
+            {theme === "dark" ? <Sun className="h-5 w-5 text-yellow-400" /> : <Moon className="h-5 w-5 text-slate-600" />}
+          </Button>
+        </header>
+
+        {/* PAGE CONTENT */}
+        <div className="flex-1 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+          {children}
         </div>
-      </div>
+      </main>
     </SidebarProvider>
   );
 }

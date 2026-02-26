@@ -1,7 +1,7 @@
 
 
 from rest_framework import serializers
-from .models import StudyGroup, StudyMaterial, QuizResult,Connection
+from .models import StudyGroup, StudyMaterial, QuizResult,Connection,AssignedQuiz
 from django.contrib.auth import get_user_model
 
 User = get_user_model()
@@ -71,11 +71,14 @@ class QuizResultSerializer(serializers.ModelSerializer):
         read_only_fields = ['user', 'study_group', 'taken_at']
 
 class AssignedQuizSerializer(serializers.ModelSerializer):
-    creator_name = serializers.ReadOnlyField(source='creator.username')
-    class Meta:
-        model = StudyGroup
-        fields = ['id', 'name', 'description', 'creator', 'members', 'join_code', 'created_at', 'capacity']
+    # This creates the nice "Assigned by: Admin" text for the frontend
+    creator_name = serializers.ReadOnlyField(source='assigned_by.username')
 
+    class Meta:
+        model = AssignedQuiz
+
+        fields = ['id', 'study_group', 'assigned_by', 'name', 'description', 'quiz_data', 'deadline', 'created_at', 'creator_name']
+        read_only_fields = ['assigned_by', 'created_at']
 class UserBasicSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
