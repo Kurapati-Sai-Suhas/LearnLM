@@ -2,7 +2,7 @@
 
 ## 1. Introduction
 ### 1.1 Purpose
-LearnLM is an AI-powered, collaborative Learning Management System (LMS) designed to bridge the gap between solo studying and peer-to-peer networking. The platform allows users to form study groups, share materials, and utilize Artificial Intelligence to instantly generate quizzes and flashcards from uploaded documents.
+LearnLM is an AI-powered, collaborative Learning Management System (LMS) designed to bridge the gap between solo studying and peer-to-peer networking. The platform allows users to form study groups, share materials, and utilize Artificial Intelligence to instantly generate quizzes, analyze skill deficits, and facilitate complementary peer-to-peer mentorship.
 
 ### 1.2 Technology Stack
 * **Frontend:** React.js (TypeScript, Vite, Tailwind CSS, shadcn/ui)
@@ -53,9 +53,9 @@ The system operates on a strict two-tier role system within Study Groups:
 * **Idea 2: Handwritten Notes OCR (Computer Vision)**
   * **Objective:** Allow students to take photos of physical notebooks or math equations and instantly convert them into digital study materials.
   * **Architecture:** Implement a Convolutional Recurrent Neural Network (CRNN) or Vision Transformer (ViT) to process image data into raw text strings.
-* **Idea 3: "Study Buddy" Recommendation Engine (RecSys)**
-  * **Objective:** Proactively suggest peers for a user to connect with.
-  * **Architecture:** Implement Neural Collaborative Filtering (NCF) to analyze user vectors (topics studied, average quiz scores) and recommend mathematically compatible study partners.
+* **Idea 3: Adaptive "Study Buddy" & Complementary Matchmaker (RecSys)**
+  * **Objective:** Move beyond basic similarity matching. The system will dynamically profile a user's strengths and weaknesses based on quiz scores and study hours. It will proactively recommend peer connections using "Complementary Matching" (e.g., matching a student weak in DSA with a student strong in DSA, creating a mutual mentorship loop).
+  * **Architecture:** Implement Neural Collaborative Filtering (NCF) and a Deep Learning PyTorch model to calculate a "Synergy Score" by cross-referencing multi-dimensional User Skill Vectors.
 
 ### 4.2 Generative AI & Large Language Models (LLMs)
 * **Idea 4: "Chat with your Document" Engine (RAG)**
@@ -67,6 +67,9 @@ The system operates on a strict two-tier role system within Study Groups:
 * **Idea 6: Automated Multi-Lingual Flashcards**
   * **Objective:** Automatically ingest a Study Group's weekly chat history and discussion board to generate a summary deck of flashcards.
   * **Architecture:** Utilize an LLM pipeline to extract key concepts from raw chat data and translate the output into multiple languages for international students.
+* **Idea 7: Prescriptive Study Engine (Adaptive Learning)**
+  * **Objective:** Automatically generate personalized, step-by-step micro-study plans based on a user's tracked skill deficits.
+  * **Architecture:** Utilize LangChain and an LLM to process a user's weak points (identified by the Profiler) and dynamically prompt a tailored, day-by-day prescriptive learning path (e.g., specific concepts to review, math problems to solve).
 
 ---
 
@@ -76,3 +79,4 @@ The system operates on a strict two-tier role system within Study Groups:
 * **NFR-2 (API Security):** All backend endpoints (except user creation) must be protected by Django's `IsAuthenticated` permission class. 
 * **NFR-3 (Data Validation):** The backend serializers must strictly define `read_only_fields` (e.g., `assigned_by`, `created_at`) to prevent malicious payload injections from the client side.
 * **NFR-4 (AI Latency Mitigation):** Massive Deep Learning models must be loaded into memory once via Django's `apps.py` configuration to prevent server freezing during API requests.
+* **NFR-5 (Dynamic Profiling):** The database schema must be scalable to continuously append and update User Skill Vectors (Topic, Success_Rate, Time_Spent) without locking database reads.
