@@ -36,7 +36,7 @@ LearnLM is a distributed web application. It consists of a React/TypeScript fron
 
 ---
 
-## 4. System Features & Functional Requirements
+## 3. System Features & Functional Requirements
 
 ### 3.1 Module A: Collaborative Workspaces & User Management
 * **REQ-1.1:** The system shall allow users to register, log in, and maintain a secure session using JWT (JSON Web Tokens).
@@ -88,6 +88,14 @@ LearnLM is a distributed web application. It consists of a React/TypeScript fron
 ### 5.3 Scalability
 * The AI models must be configured to run efficiently on standard CPU cloud instances (PaaS) without requiring dedicated GPU infrastructure, ensuring cost-effective scaling via Azure App Service.
 
+---
+
+## 6. System & Cloud Architecture (Microsoft Azure)
+
+### 6.1 Data Flow Diagram
+The following diagram illustrates the interaction between the frontend, the Django routing layer, the isolated sandboxes, and the Azure cloud infrastructure:
+
+```text
 [ USER (React Frontend) ]
         |
         | (JSON / REST API over HTTPS)
@@ -113,12 +121,3 @@ LearnLM is a distributed web application. It consists of a React/TypeScript fron
         
   [ AZURE BLOB STORAGE ]                    [ AZURE COSMOS DB ]
   (Saves Raw Images/PDFs)                   (Saves Vectors, Profiles, Graph)
-
----
-
-## 6. Cloud Architecture (Microsoft Azure)
-To simulate a production-ready enterprise application, the system utilizes the following Azure services:
-1. **Azure Static Web Apps:** CI/CD deployment of the React Frontend via GitHub Actions.
-2. **Azure App Service:** Fully managed PaaS hosting for the Django Backend and AI models.
-3. **Azure Cosmos DB:** Globally distributed NoSQL database utilizing the MongoDB API to store user profiles, metadata, and Deep Learning feature vectors.
-4. **Azure Blob Storage:** Infinite object storage for raw uploaded images, textbook PDFs, and profile pictures.
