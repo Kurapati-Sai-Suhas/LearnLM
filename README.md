@@ -88,6 +88,32 @@ LearnLM is a distributed web application. It consists of a React/TypeScript fron
 ### 5.3 Scalability
 * The AI models must be configured to run efficiently on standard CPU cloud instances (PaaS) without requiring dedicated GPU infrastructure, ensuring cost-effective scaling via Azure App Service.
 
+[ USER (React Frontend) ]
+        |
+        | (JSON / REST API over HTTPS)
+        v
+[ AZURE APP SERVICE (Hosting) ]
+[      DJANGO REST API        ]
+        |
+        +-- (Uploads Diagram) ----> [ MobileNetV2 (Feature Extractor) ] 
+        |                                       |
+        |                                       v
+        +-- (Submits Code) -------> [ Judge0 / Piston API Sandbox ]
+        |                                       |
+        |                                       v
+        +-- (Requests Next Q) ----> [ HYBRID AI ROUTER (Traffic Cop) ]
+                                                |
+                                    +-----------+-----------+
+                                    |                       |
+                               [ GNN Engine ]         [ Elo Engine ]
+                               (Hierarchical)            (Flat)
+                                    |                       |
+=============================================================================
+                                THE CLOUD (AZURE)
+        
+  [ AZURE BLOB STORAGE ]                    [ AZURE COSMOS DB ]
+  (Saves Raw Images/PDFs)                   (Saves Vectors, Profiles, Graph)
+
 ---
 
 ## 6. Cloud Architecture (Microsoft Azure)
