@@ -1,82 +1,98 @@
-# System Requirements Specification (SRS) for LearnLM
+# Software Requirements Specification (SRS)
+**Project Name:** LearnLM (Intelligent Virtual Study Group Platform)  
+**Version:** 1.0  
+**Role:** Lead AI & Backend Architecture  
+
+---
 
 ## 1. Introduction
+
 ### 1.1 Purpose
-LearnLM is an AI-powered, collaborative Learning Management System (LMS) designed to bridge the gap between solo studying and peer-to-peer networking. The platform allows users to form study groups, share materials, and utilize Artificial Intelligence to instantly generate quizzes, analyze skill deficits, and facilitate complementary peer-to-peer mentorship.
+The purpose of this document is to define the software requirements for LearnLM, an intelligent, cloud-hosted collaborative learning platform. This document outlines the system architecture, AI/ML integrations, API constraints, and cloud infrastructure required to build the platform.
 
-### 1.2 Technology Stack
-* **Frontend:** React.js (TypeScript, Vite, Tailwind CSS, shadcn/ui)
-* **Backend:** Python, Django REST Framework (DRF)
-* **Database:** MongoDB (Containerized via Docker / Cloud via Atlas)
-* **Standard AI Integration:** OpenAI API (Current Phase)
-* **Advanced AI Stack (Planned):** PyTorch, Hugging Face (Transformers), Ollama (Local LLMs), LangChain, Vector Databases (ChromaDB/Pinecone)
+### 1.2 Intended Audience
+This document is intended for frontend developers, backend engineers, AI/ML engineers, and technical recruiters reviewing the project architecture. 
 
----
-
-## 2. User Roles & Access (Role-Based Access Control - RBAC)
-The system operates on a strict two-tier role system within Study Groups:
-1. **Creator (Teacher/Admin):** The user who creates a study group. They have exclusive rights to upload master documents, configure AI parameters, and assign deadlines for group-wide quizzes.
-2. **Member (Student):** Users who join a group using a specific 5-digit Access Code. They can view materials, participate in discussions, and complete assigned quizzes.
+### 1.3 Project Scope
+LearnLM moves beyond standard file-sharing platforms by integrating deep learning and adaptive algorithms. It features collaborative workspaces, a "Visual Semantic Search" engine for retrieving un-tagged diagram notes using Deep Learning, and an "Adaptive Coding Portal" that uses a Hybrid AI Engine to personalize learning paths based on the prerequisite structure of the subject.
 
 ---
 
-## 3. Functional Requirements (Current Implementation)
+## 2. Overall Description
 
-### 3.1 Authentication & Dashboard
-* **FR-1:** Users must be able to securely log in and receive a JSON Web Token (JWT) for API authentication.
-* **FR-2:** The Dashboard must calculate and display dynamic user statistics, including strictly non-duplicated counts of Active Groups, Study Hours, Quizzes Passed, and Achievement Points.
+### 2.1 Product Perspective
+LearnLM is a distributed web application. It consists of a React/TypeScript frontend (Single Page Application) and a Python/Django backend. The backend serves as a REST API and a "Traffic Cop" that routes requests to various Machine Learning models, external code-execution sandboxes, and cloud storage systems.
 
-### 3.2 Study Groups & "Bouncer" Security
-* **FR-3:** Creators can generate new study groups. The system must automatically register the creator as the first active member of the group.
-* **FR-4 (The Bouncer Logic):** The system must strictly block non-members from viewing group details. Users must enter a valid Access Code to unlock the group's internal tabs (Assignments, Discussions, Files, Members).
-* **FR-5:** The Members Tab must fetch and display all users associated with the group, visually distinguishing the "Admin" from regular members.
+### 2.2 Operating Environment
+* **Frontend:** Modern Web Browsers (Chrome, Firefox, Safari).
+* **Backend:** Python 3.x, Django REST Framework.
+* **Database:** Azure Cosmos DB (MongoDB API).
+* **Cloud Host:** Microsoft Azure (App Service, Static Web Apps, Blob Storage).
 
-### 3.3 AI Quiz Engine & Assignment System
-* **FR-6:** The system must be able to parse text from uploaded PDFs/Documents (`.txt`, `.pdf`).
-* **FR-7:** The AI engine must generate 5-question multiple-choice quizzes based on the extracted text and a user-provided topic.
-* **FR-8:** **Self-Study Mode:** Any user can generate a quiz for their own personal practice.
-* **FR-9:** **Teacher Mode:** Only the Group Creator can view the "Assign to Group" UI. The system must validate the payload (`name`, `description`, `quiz_data`, `deadline`, and `study_group_id`) before saving the assignment to the database.
-
-### 3.4 Social Network (Friends System)
-* **FR-10:** Users can search the database for classmates using a minimum 3-character query.
-* **FR-11:** Users can send, accept, or reject peer-to-peer friend requests.
-* **FR-12:** The UI must display separate lists for "My Friends" and "Pending Requests" with dynamic counter badges.
+### 2.3 Design and Implementation Constraints
+* **Sandboxed Execution:** User-submitted code must NEVER run on the main Django server. It must be isolated via an external API (Judge0/Piston).
+* **AI Latency:** Deep learning inferences (feature extraction, graph traversals) introduce latency. The frontend must implement robust loading states.
+* **CORS:** Strict Cross-Origin Resource Sharing rules must be configured to allow communication between the React frontend and Django backend.
 
 ---
 
-## 4. Future Scope (Advanced AI Integration Roadmap)
+## 4. System Features & Functional Requirements
 
-### 4.1 Custom Deep Learning Models (Predictive & Vision)
-* **Idea 1: Semantic "Smart" Grader (NLP)**
-  * **Objective:** Move beyond exact-match Multiple Choice questions to Short Answer grading.
-  * **Architecture:** Utilize Hugging Face `sentence-transformers` (BERT) to calculate Cosine Similarity between a student's written answer and the true answer, grading them on conceptual understanding.
-* **Idea 2: Handwritten Notes OCR (Computer Vision)**
-  * **Objective:** Allow students to take photos of physical notebooks or math equations and instantly convert them into digital study materials.
-  * **Architecture:** Implement a Convolutional Recurrent Neural Network (CRNN) or Vision Transformer (ViT) to process image data into raw text strings.
-* **Idea 3: Adaptive "Study Buddy" & Complementary Matchmaker (RecSys)**
-  * **Objective:** Move beyond basic similarity matching. The system will dynamically profile a user's strengths and weaknesses based on quiz scores and study hours. It will proactively recommend peer connections using "Complementary Matching" (e.g., matching a student weak in DSA with a student strong in DSA, creating a mutual mentorship loop).
-  * **Architecture:** Implement Neural Collaborative Filtering (NCF) and a Deep Learning PyTorch model to calculate a "Synergy Score" by cross-referencing multi-dimensional User Skill Vectors.
+### 3.1 Module A: Collaborative Workspaces & User Management
+* **REQ-1.1:** The system shall allow users to register, log in, and maintain a secure session using JWT (JSON Web Tokens).
+* **REQ-1.2:** Users shall be able to create isolated "Study Groups."
+* **REQ-1.3:** The system shall support Role-Based Access Control (RBAC) within groups (e.g., Admin, Member).
+* **REQ-1.4:** Users shall be able to upload study materials (PDFs, Images, Code snippets) to their specific group workspace.
 
-### 4.2 Generative AI & Large Language Models (LLMs)
-* **Idea 4: "Chat with your Document" Engine (RAG)**
-  * **Objective:** Enable users to query specific, massive PDFs and receive summarized answers with exact page citations.
-  * **Architecture:** Implement Retrieval-Augmented Generation (RAG) using LangChain to connect Django with a Vector Database (e.g., ChromaDB). 
-* **Idea 5: The Self-Explaining AI Tutor**
-  * **Objective:** Provide conversational, custom feedback when a student fails a quiz question.
-  * **Architecture:** Feed the student's incorrect logic to a locally hosted LLM (via Ollama/Hugging Face) to generate a personalized explanation of exactly why their reasoning was flawed.
-* **Idea 6: Automated Multi-Lingual Flashcards**
-  * **Objective:** Automatically ingest a Study Group's weekly chat history and discussion board to generate a summary deck of flashcards.
-  * **Architecture:** Utilize an LLM pipeline to extract key concepts from raw chat data and translate the output into multiple languages for international students.
-* **Idea 7: Prescriptive Study Engine (Adaptive Learning)**
-  * **Objective:** Automatically generate personalized, step-by-step micro-study plans based on a user's tracked skill deficits.
-  * **Architecture:** Utilize LangChain and an LLM to process a user's weak points (identified by the Profiler) and dynamically prompt a tailored, day-by-day prescriptive learning path (e.g., specific concepts to review, math problems to solve).
+### 3.2 Module B: Visual Semantic Search (Diagram Matcher)
+* **REQ-2.1 (Feature Extraction):** Upon image upload, the Django backend shall pass the image through a headless pre-trained Convolutional Neural Network (MobileNetV2) to extract a 1D feature vector representing the image's visual structure.
+* **REQ-2.2 (Vector Storage):** The system shall store this massive feature vector array in the NoSQL database alongside the document's metadata.
+* **REQ-2.3 (Cosine Similarity Engine):** Users shall be able to upload a cropped image (e.g., a diagram) as a search query. The system will extract its vector and use Cosine Similarity math to find the closest matching vectors in the database, returning the original source documents.
+
+### 3.3 Module C: Adaptive Coding Portal
+* **REQ-3.1 (In-Browser IDE):** The frontend shall integrate an editor (like Monaco Editor) supporting syntax highlighting and auto-indentation for Java and Python.
+* **REQ-3.2 (Isolated Execution):** When code is submitted, the backend shall route the raw code and hidden test cases to a Judge0/Piston API sandbox and await the Pass/Fail result and execution time.
+* **REQ-3.3 (Data Logging):** The system shall log every submission attempt, including execution time, memory usage, and success rate, to build a historical user profile.
+
+### 3.4 Module D: The Hybrid AI Recommendation Router
+* **REQ-4.1 (Topic Tagging):** All subjects in the database shall be tagged with a `structure_type` (either `hierarchical` or `flat`).
+* **REQ-4.2 (The Traffic Cop):** When a user requests the "next question," the backend router shall check the subject's structure tag to determine the recommendation engine.
+* **REQ-4.3 (Hierarchical Engine - GNN):** If the topic is structured (e.g., Data Structures & Algorithms), the router shall query a Graph Neural Network (or Graph Database representation) to recommend questions based on prerequisite knowledge, providing explainable feedback.
+* **REQ-4.4 (Flat Engine - Elo/IRT):** If the topic is unstructured (e.g., Tech Trivia), the router shall utilize an Item Response Theory or Elo Rating algorithm to dynamically adjust the difficulty based strictly on the user's current score.
+
+---
+
+## 4. External Interface Requirements
+
+### 4.1 User Interfaces
+* Clean, responsive UI built with React.
+* Dashboards displaying user rating progression (Elo scores) and topic mastery.
+
+### 4.2 Software Interfaces
+* **Judge0 / Piston API:** For secure code compilation and testing.
+* **Azure SDKs:** `azure-storage-blob` for image uploads, and `pymongo` to connect to Cosmos DB.
 
 ---
 
 ## 5. Non-Functional Requirements
 
-* **NFR-1 (Database Resilience):** The MongoDB database must be containerized using Docker Compose with mapped volumes (`-v mongo_data:/data/db`) to ensure user data persists across server restarts.
-* **NFR-2 (API Security):** All backend endpoints (except user creation) must be protected by Django's `IsAuthenticated` permission class. 
-* **NFR-3 (Data Validation):** The backend serializers must strictly define `read_only_fields` (e.g., `assigned_by`, `created_at`) to prevent malicious payload injections from the client side.
-* **NFR-4 (AI Latency Mitigation):** Massive Deep Learning models must be loaded into memory once via Django's `apps.py` configuration to prevent server freezing during API requests.
-* **NFR-5 (Dynamic Profiling):** The database schema must be scalable to continuously append and update User Skill Vectors (Topic, Success_Rate, Time_Spent) without locking database reads.
+### 5.1 Performance
+* Standard REST API calls should resolve in < 200ms.
+* AI Inference calls (Visual Search, Code Compilation) should resolve in < 3000ms.
+
+### 5.2 Security
+* User passwords must be hashed (Argon2 or bcrypt) before database insertion.
+* All API endpoints handling user data must require a valid Bearer Token.
+* Direct file uploads must be sanitized to prevent malicious script injection before being sent to Azure Blob Storage.
+
+### 5.3 Scalability
+* The AI models must be configured to run efficiently on standard CPU cloud instances (PaaS) without requiring dedicated GPU infrastructure, ensuring cost-effective scaling via Azure App Service.
+
+---
+
+## 6. Cloud Architecture (Microsoft Azure)
+To simulate a production-ready enterprise application, the system utilizes the following Azure services:
+1. **Azure Static Web Apps:** CI/CD deployment of the React Frontend via GitHub Actions.
+2. **Azure App Service:** Fully managed PaaS hosting for the Django Backend and AI models.
+3. **Azure Cosmos DB:** Globally distributed NoSQL database utilizing the MongoDB API to store user profiles, metadata, and Deep Learning feature vectors.
+4. **Azure Blob Storage:** Infinite object storage for raw uploaded images, textbook PDFs, and profile pictures.
