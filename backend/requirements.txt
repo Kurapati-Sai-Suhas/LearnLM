@@ -1,0 +1,10 @@
+Django==5.2.8
+djangorestframework
+djangorestframework-simplejwt
+django-cors-headers
+django-filter
+langchain
+# google-generative-ai  # Gemini client may not provide wheels for Python 3.14; install with a compatible Python (3.10/3.11) if needed
+PyPDF2
+python-docx
+Pillow

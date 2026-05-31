@@ -14,7 +14,7 @@ import Latex from 'react-latex-next';
 // Markdown Renderers
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-// 👇 NEW: Added Math Plugins
+// 👇 Math Plugins
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 
@@ -86,8 +86,8 @@ export default function DoubtSolver() {
     setLoading(true);
 
     try {
-      // 2. Call Backend
-      const res = await api.post('/ai/doubt/', { 
+      // 2. Call Backend (👇 UPDATED TO HIT THE RAG ENDPOINT)
+      const res = await api.post('/ai/doubt/rag/', { 
         question: userText, 
         materialId: selectedMaterialId 
       });
@@ -167,7 +167,6 @@ export default function DoubtSolver() {
                         
                         {message.sender === "ai" ? (
                             <div className="prose prose-sm max-w-none prose-p:leading-relaxed prose-pre:bg-slate-800 prose-pre:text-slate-50 prose-th:bg-slate-100 prose-td:border prose-th:border prose-th:p-2 prose-td:p-2">
-                                {/* 👇 NEW: Added remarkMath and rehypeKatex 👇 */}
                                 <ReactMarkdown 
                                     remarkPlugins={[remarkGfm, remarkMath]} 
                                     rehypePlugins={[rehypeKatex]}
