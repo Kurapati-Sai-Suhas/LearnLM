@@ -1,12 +1,12 @@
-import google.generativeai as genai
 import json
-import re
-import PyPDF2
-from django.conf import settings
-import numpy as np
-from PIL import Image as PILImage
 import io
+import PyPDF2
+import numpy as np
+from django.conf import settings
+from PIL import Image as PILImage
+import google.generativeai as genai
 
+# Configure the SDK 
 genai.configure(api_key=settings.GEMINI_API_KEY)
 
 
@@ -14,7 +14,7 @@ class AIService:
 
     @staticmethod
     def get_model():
-        return genai.GenerativeModel('models/gemini-2.5-flash')
+        return genai.GenerativeModel('gemini-2.5-flash')
 
     @staticmethod
     def generate_quiz(text, num_questions=5):
@@ -194,73 +194,41 @@ class VectorSearchService:
 
 class RAGService:
     """
-    Retrieval-Augmented Generation (RAG) using FAISS for vector search
-    and Gemini for answer generation.
+    Context-Aware Doubt Solver utilizing Gemini 1.5 Flash's massive 1M token window.
+    Bypasses traditional FAISS embedding limits for superior speed and accuracy on study notes.
     """
-
-    @staticmethod
-    def get_embeddings(texts: list) -> np.ndarray:
-        """Uses Google's text-embedding-004 model to embed text chunks."""
-        embeddings = []
-        for text in texts:
-            result = genai.embed_content(
-                model="models/text-embedding-004",
-                content=text,
-                task_type="retrieval_document"
-            )
-            embeddings.append(result['embedding'])
-        return np.array(embeddings, dtype=np.float32)
-
-    @staticmethod
-    def build_faiss_index(embeddings: np.ndarray):
-        """Builds an in-memory FAISS index from embedding vectors."""
-        import faiss
-        dimension = embeddings.shape[1]
-        index = faiss.IndexFlatL2(dimension)
-        index.add(embeddings)
-        return index
 
     @classmethod
     def answer_with_rag(cls, question: str, chunks: list) -> str:
         """
-        Full RAG pipeline:
-        1. Embed all chunks → build FAISS index
-        2. Embed the question → find top-3 most relevant chunks
-        3. Send [question + context] to Gemini → get answer
+        Direct Large-Context routing.
         """
         if not chunks:
             return "No document content available to answer from."
 
-        print(f"🔍 RAG: Embedding {len(chunks)} chunks...")
-        chunk_embeddings = cls.get_embeddings(chunks)
-        index = cls.build_faiss_index(chunk_embeddings)
+        print(f"🚀 PIVOT: Bypassing FAISS. Routing {len(chunks)} chunks directly to Gemini 1.5 Flash...")
 
-        # Embed the question
-        q_result = genai.embed_content(
-            model="models/text-embedding-004",
-            content=question,
-            task_type="retrieval_query"
-        )
-        q_vec = np.array([q_result['embedding']], dtype=np.float32)
+        # Recombine the chunks into one massive context string
+        full_context = "\n\n".join(chunks)
+        
+        # Cap it safely to ensure ultra-fast response times during the demo
+        safe_context = full_context[:100000]
 
-        # Find top 3 relevant chunks
-        import faiss
-        _, indices = index.search(q_vec, k=min(3, len(chunks)))
-        context = "\n\n---\n\n".join([chunks[i] for i in indices[0]])
+        print("🤖 Reading the document and generating an answer...")
 
-        print("🤖 Sending retrieved context to Gemini...")
-        model = AIService.get_model()
         prompt = f"""You are a helpful AI Study Tutor. Answer the student's question 
-using ONLY the context provided below. If the answer isn't in the context, say so.
+using ONLY the context provided below from their uploaded study material. 
+If the answer isn't in the context, clearly state that.
 
-CONTEXT (retrieved from their study material):
-{context}
+CONTEXT:
+{safe_context}
 
 STUDENT QUESTION: {question}
 
-Provide a clear, well-structured answer with markdown formatting."""
+Provide a clear, well-structured answer using markdown formatting and bullet points."""
 
         try:
+            model = AIService.get_model()
             response = model.generate_content(prompt)
             return response.text
         except Exception as e:

@@ -1,4 +1,3 @@
-# groups/consumers.py
 import json
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
@@ -83,7 +82,9 @@ class GroupChatConsumer(AsyncWebsocketConsumer):
         msg_type = data.get("type", "message")
 
         if msg_type == "message":
-            content = data.get("content", "").strip()
+            # 👇 CRITICAL FIX: Look for 'message' or 'text' first, fallback to 'content'
+            content = data.get("message", data.get("text", data.get("content", ""))).strip()
+            
             if not content:
                 return
 
@@ -126,7 +127,7 @@ class GroupChatConsumer(AsyncWebsocketConsumer):
         await self.send(text_data=json.dumps({
             "type": "message",
             "message_id": event["message_id"],
-            "content": event["content"],
+            "message": event["content"], # 👇 CRITICAL FIX: Send it back to React as "message"
             "username": event["username"],
             "user_id": event["user_id"],
             "timestamp": event["timestamp"],
@@ -167,10 +168,6 @@ class GroupChatConsumer(AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def save_message(self, user, group_id, content):
-        # Reuse DirectMessage model but add group context via a receiver trick.
-        # We store group chat messages as DirectMessage with receiver=sender
-        # (self-message pattern) — OR you can add a GroupMessage model below.
-        # Using GroupMessage model (defined in models.py addition below):
         from .models import GroupMessage
         msg = GroupMessage.objects.create(
             group_id=group_id,
@@ -192,7 +189,7 @@ class GroupChatConsumer(AsyncWebsocketConsumer):
         return [
             {
                 "message_id": m.id,
-                "content": m.content,
+                "message": m.content, # 👇 CRITICAL FIX: Load history as "message"
                 "username": m.sender.username,
                 "user_id": m.sender.id,
                 "timestamp": m.timestamp.strftime("%H:%M"),

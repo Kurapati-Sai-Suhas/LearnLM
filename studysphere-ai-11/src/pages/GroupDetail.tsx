@@ -1,20 +1,22 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { groupsAPI, userAPI } from "@/services/api"; 
-import api from "@/services/api"; // 👈 IMPORTED BASE API
+import api from "@/services/api";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input"; 
 import { Label } from "@/components/ui/label"; 
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog"; 
-import { ArrowLeft, Users, FileText, MessageSquare, Upload, Send, Download, Calendar, Brain, CheckCircle, XCircle, Trophy, RefreshCw, ClipboardList, Lock, LogIn } from "lucide-react"; 
+import { ArrowLeft, Users, FileText, MessageSquare, Upload, Download, Calendar, Brain, CheckCircle, XCircle, Trophy, RefreshCw, ClipboardList, Lock, LogIn } from "lucide-react"; 
 import { Progress } from "@/components/ui/progress";
 import 'katex/dist/katex.min.css';
 import Latex from 'react-latex-next';
+
+// 👇 IMPORT THE NEW WEBSOCKET CHAT COMPONENT
+import GroupChat from "@/components/GroupChat"; 
 
 export default function GroupDetail() {
   const params = useParams();
@@ -29,14 +31,10 @@ export default function GroupDetail() {
   
   // Members State
   const [membersList, setMembersList] = useState<any[]>([]);
-  const [membersLoading, setMembersLoading] = useState(true); // 👈 NEW STATE FOR LOADING FIX
+  const [membersLoading, setMembersLoading] = useState(true); 
 
   // Join Code State
   const [joinCode, setJoinCode] = useState("");
-
-  // Chat State
-  const [newMessage, setNewMessage] = useState("");
-  const [messages, setMessages] = useState<any[]>([]);
 
   // UPLOAD POPUP STATES
   const [isUploadOpen, setIsUploadOpen] = useState(false);
@@ -87,7 +85,6 @@ export default function GroupDetail() {
   const fetchAssignments = async () => {
       if (!id) return;
       try {
-          // Uses standard api instance
           const res = await api.get(`/quizzes/assigned/?study_group=${id}`);
           setAssignedQuizzes(res.data.results || res.data || []);
       } catch (error) {
@@ -97,16 +94,15 @@ export default function GroupDetail() {
 
   const fetchMembers = async () => {
       if (!id) return;
-      setMembersLoading(true); // Start loading
+      setMembersLoading(true); 
       try {
-          // Uses standard api instance
           const res = await api.get(`/groups/${id}/members/`);
           setMembersList(res.data.results || res.data || []);
       } catch (error) {
           console.error("Failed to fetch members", error);
           setMembersList([]);
       } finally {
-          setMembersLoading(false); // Stop loading no matter what!
+          setMembersLoading(false); 
       }
   };
 
@@ -129,19 +125,6 @@ export default function GroupDetail() {
       } finally {
           setUploading(false);
       }
-  };
-
-  const handleSendMessage = () => {
-    if (newMessage.trim()) {
-      const tempMsg = {
-          id: Date.now(),
-          sender: currentUser?.username || "Me",
-          text: newMessage,
-          timestamp: new Date().toISOString()
-      };
-      setMessages(prev => [...prev, tempMsg]);
-      setNewMessage("");
-    }
   };
 
   const handleJoin = async () => {
@@ -394,31 +377,13 @@ export default function GroupDetail() {
           </Card>
         </TabsContent>
 
-        {/* DISCUSSIONS TAB */}
-        <TabsContent value="discussions" className="space-y-4 mt-4">
-            <Card className="border-slate-200 dark:border-slate-700 dark:bg-slate-800 shadow-sm">
-                <CardContent className="space-y-4 pt-6">
-                     <div className="space-y-4 max-h-96 overflow-y-auto p-2">
-                        {messages.length === 0 ? (
-                            <p className="text-center text-slate-500 dark:text-slate-400 py-10">No messages yet. Start the conversation!</p>
-                        ) : (
-                            messages.map((msg: any) => (
-                                <div key={msg.id} className={`flex gap-3 ${msg.sender === currentUser?.username ? "flex-row-reverse" : ""}`}>
-                                    <Avatar className="w-8 h-8 shrink-0"><AvatarFallback className="bg-blue-100 text-blue-700 dark:bg-slate-700 dark:text-slate-300">{msg.sender[0].toUpperCase()}</AvatarFallback></Avatar>
-                                    <div className={`p-3 rounded-xl max-w-[80%] shadow-sm ${msg.sender === currentUser?.username ? "bg-blue-600 text-white rounded-tr-none" : "bg-slate-100 dark:bg-slate-700 dark:text-slate-200 rounded-tl-none"}`}>
-                                        <p className="text-[10px] opacity-70 mb-1 font-bold uppercase tracking-wider">{msg.sender}</p>
-                                        <p className="text-sm">{msg.text}</p>
-                                    </div>
-                                </div>
-                            ))
-                        )}
-                     </div>
-                     <div className="flex gap-2 pt-4 border-t border-slate-200 dark:border-slate-700">
-                        <Textarea placeholder="Type a message..." value={newMessage} onChange={(e) => setNewMessage(e.target.value)} className="min-h-[60px] dark:bg-slate-900 dark:border-slate-700 focus-visible:ring-blue-500" />
-                        <Button onClick={handleSendMessage} className="bg-blue-600 hover:bg-blue-700 h-auto px-6 text-white"><Send className="h-5 w-5" /></Button>
-                     </div>
-                </CardContent>
-            </Card>
+        {/* 👇 REAL-TIME WEBSOCKET DISCUSSIONS TAB */}
+        <TabsContent value="discussions" className="mt-4">
+            {id && currentUser ? (
+               <GroupChat groupId={id} currentUser={currentUser.username} />
+            ) : (
+               <div className="text-center p-8 text-slate-500">Loading chat...</div>
+            )}
         </TabsContent>
 
         {/* MEMBERS TAB */}
