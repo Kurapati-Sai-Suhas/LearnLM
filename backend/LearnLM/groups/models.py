@@ -1,6 +1,8 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from datetime import timedelta
+from django.conf import settings
+
 
 class User(AbstractUser):
     email = models.EmailField(unique=True)
@@ -30,7 +32,6 @@ class StudyGroup(models.Model):
         return self.name
 
 
-
 class Subject(models.Model):
     name = models.CharField(max_length=50)
     groups = models.ManyToManyField(StudyGroup, related_name='subjects')
@@ -49,6 +50,7 @@ class StudyMaterial(models.Model):
     def __str__(self):
         return self.title
 
+
 class UserActivityLog(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     activity_type = models.CharField(max_length=100)
@@ -58,9 +60,6 @@ class UserActivityLog(models.Model):
     def __str__(self):
         return f"{self.user.username} - {self.activity_type} : {self.timestamp}"
 
-
-from datetime import timedelta
-from django.conf import settings
 
 class UserActivity(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
@@ -73,17 +72,20 @@ class UserActivity(models.Model):
 
     def __str__(self):
         return f"{self.user.username} - {self.section_name}: {self.time_spent}"
+
+
 class QuizResult(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     study_group = models.ForeignKey(StudyGroup, on_delete=models.CASCADE, null=True, blank=True)
     score = models.IntegerField()
     total_questions = models.IntegerField(default=5)
-    topic = models.CharField(max_length=200) # e.g. "Physics"
+    topic = models.CharField(max_length=200)
     date_taken = models.DateTimeField(auto_now_add=True)
     AssignedQuiz = models.ForeignKey('AssignedQuiz', on_delete=models.SET_NULL, null=True, blank=True)
 
     def __str__(self):
         return f"{self.user.username} - {self.topic}: {self.score}"
+
 
 class AssignedQuiz(models.Model):
     study_group = models.ForeignKey(StudyGroup, on_delete=models.CASCADE)
@@ -94,7 +96,8 @@ class AssignedQuiz(models.Model):
     deadline = models.DateTimeField(default=timedelta(days=7))
 
     def __str__(self):
-        return f"{self.study_group.name} - {self.topic} (Assigned by {self.assigned_by.username if self.assigned_by else 'Unknown'})"
+        return f"{self.study_group.name} - {self.topic}"
+
 
 class DoubtChatHistory(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
@@ -105,6 +108,8 @@ class DoubtChatHistory(models.Model):
 
     class Meta:
         ordering = ['created_at']
+
+
 class Connection(models.Model):
     STATUS_CHOICES = (
         ('pending', 'Pending'),
@@ -135,3 +140,92 @@ class DirectMessage(models.Model):
 
     def __str__(self):
         return f"From {self.sender.username} to {self.receiver.username}"
+
+
+class Document(models.Model):
+    FILE_TYPE_CHOICES = [
+        ("image", "Image"),
+        ("pdf", "PDF"),
+        ("code", "Code Snippet"),
+        ("other", "Other"),
+    ]
+    group = models.ForeignKey(StudyGroup, on_delete=models.CASCADE, related_name="documents")
+    uploaded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="documents")
+    title = models.CharField(max_length=300)
+    file_url = models.URLField(max_length=500, blank=True)
+    file = models.FileField(upload_to="documents/", blank=True, null=True)
+    file_type = models.CharField(max_length=10, choices=FILE_TYPE_CHOICES, default="other")
+    feature_vector = models.TextField(null=True, blank=True)
+    vector_extracted_at = models.DateTimeField(null=True, blank=True)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-uploaded_at"]
+
+    def __str__(self):
+        return f"{self.title} ({self.file_type})"
+
+    @property
+    def has_vector(self):
+        return self.feature_vector is not None and self.feature_vector != ""
+
+    def is_image(self):
+        return self.file_type == "image"
+
+
+# ── Module C: Adaptive Coding Portal ────────────────────────
+
+class UserCodingProfile(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="coding_profile")
+    elo_rating = models.FloatField(default=1200.0)
+    total_submissions = models.IntegerField(default=0)
+    successful_submissions = models.IntegerField(default=0)
+
+    def __str__(self):
+        return f"{self.user.username} — Elo: {self.elo_rating:.0f}"
+
+    @property
+    def success_rate(self):
+        if self.total_submissions == 0:
+            return 0.0
+        return round(self.successful_submissions / self.total_submissions * 100, 1)
+
+
+class CodeSubmission(models.Model):
+    STATUS_CHOICES = [
+        ("accepted",      "Accepted"),
+        ("wrong_answer",  "Wrong Answer"),
+        ("time_limit",    "Time Limit Exceeded"),
+        ("runtime_error", "Runtime Error"),
+        ("compile_error", "Compile Error"),
+    ]
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="submissions")
+    problem_id = models.CharField(max_length=100)
+    language = models.CharField(max_length=20)
+    code = models.TextField()
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES)
+    execution_time_ms = models.IntegerField(null=True, blank=True)
+    memory_used_kb = models.IntegerField(null=True, blank=True)
+    submitted_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-submitted_at"]
+
+
+# ── WebSocket Group Chat ─────────────────────────────────────
+
+class GroupMessage(models.Model):
+    """
+    Real-time chat message for a Study Group.
+    Saved to DB so history loads when a new member connects.
+    """
+    group = models.ForeignKey(StudyGroup, on_delete=models.CASCADE, related_name='messages')
+    sender = models.ForeignKey(User, on_delete=models.CASCADE, related_name='group_messages')
+    content = models.TextField()
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['timestamp']
+
+    def __str__(self):
+        return f"[{self.group.name}] {self.sender.username}: {self.content[:40]}"

@@ -67,8 +67,8 @@ class QuizResultSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = QuizResult
-        fields = ['id', 'user', 'study_group', 'score', 'taken_at']
-        read_only_fields = ['user', 'study_group', 'taken_at']
+        fields = ['id', 'user', 'study_group', 'score', 'date_taken']
+        read_only_fields = ['user', 'study_group', 'date_taken']
 
 class AssignedQuizSerializer(serializers.ModelSerializer):
     # This creates the nice "Assigned by: Admin" text for the frontend
@@ -76,9 +76,8 @@ class AssignedQuizSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = AssignedQuiz
-
-        fields = ['id', 'study_group', 'assigned_by', 'name', 'description', 'quiz_data', 'deadline', 'created_at', 'creator_name']
-        read_only_fields = ['assigned_by', 'created_at']
+        fields = ['id', 'study_group', 'assigned_by', 'topic', 'quiz_data', 'deadline', 'assigned_at', 'creator_name']
+        read_only_fields = ['assigned_by', 'assigned_at'] 
 class UserBasicSerializer(serializers.ModelSerializer):
     class Meta:
         model = User

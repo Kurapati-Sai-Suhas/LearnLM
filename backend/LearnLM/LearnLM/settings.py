@@ -20,7 +20,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "django-insecure-kzr2wbgq!hc*++1wf^54slex6sjx^i3g6n3*edeb$@7q^q7gnt"
+SECRET_KEY = os.getenv("SECRET_KEY", "fallback-secret-key-for-local-dev")
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -31,6 +31,7 @@ ALLOWED_HOSTS = []
 # Application definition
 
 INSTALLED_APPS = [
+    "daphne",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -41,6 +42,8 @@ INSTALLED_APPS = [
     "rest_framework",
     "rest_framework_simplejwt",
     "corsheaders",
+    "channels",
+
 
 ]
 
@@ -73,6 +76,7 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "LearnLM.wsgi.application"
+ASGI_APPLICATION = 'LearnLM.asgi.application'
 
 
 # Database
@@ -174,4 +178,13 @@ AUTH_USER_MODEL = 'groups.User'
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
-GEMINI_API_KEY = "AIzaSyAyv2GkvtQtJVSub-yUbWvsgwnQCfQ3j3Q"
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+JUDGE0_API_KEY = os.getenv("JUDGE0_API_KEY")
+JUDGE0_API_HOST = os.getenv("JUDGE0_API_HOST", "judge0-extra-ce.p.rapidapi.com")
+
+# Use In-Memory channel layer for local testing without Docker/Redis
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels.layers.InMemoryChannelLayer"
+    }
+}
