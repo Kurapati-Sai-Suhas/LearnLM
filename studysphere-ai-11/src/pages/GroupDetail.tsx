@@ -18,10 +18,16 @@ import Latex from 'react-latex-next';
 // 👇 IMPORT THE NEW WEBSOCKET CHAT COMPONENT
 import GroupChat from "@/components/GroupChat"; 
 
+// 👇 IMPORT THE ONBOARDING MODAL
+import CodingOnboardingModal from "@/components/CodingOnboardingModal";
+
 export default function GroupDetail() {
   const params = useParams();
   const id = params.id || params.groupId; 
   const navigate = useNavigate();
+
+  // 👇 ADDED: Onboarding Modal State
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   // Data States
   const [group, setGroup] = useState<any>(null);
@@ -231,6 +237,28 @@ export default function GroupDetail() {
           Code: {group.join_code || "N/A"}
         </Badge>
       </div>
+
+      {/* 👇 FORCED TO SHOW FOR TESTING: PORTAL ENTRY POINT */}
+      <Card className="border-blue-500 bg-blue-900/10 shadow-sm mb-6">
+          <CardContent className="flex items-center justify-between p-6">
+              <div>
+                  <CardTitle className="text-blue-500 dark:text-blue-400">Adaptive Coding Portal</CardTitle>
+                  <p className="text-slate-600 dark:text-slate-300 mt-1">Master {group.primary_topic || "DSA"} with AI-driven learning paths.</p>
+              </div>
+              <Button onClick={() => setShowOnboarding(true)} className="bg-green-600 hover:bg-green-700 text-white px-8 py-6 text-lg font-bold">
+                  Enter Portal 💻
+              </Button>
+          </CardContent>
+      </Card>
+
+      {/* 👇 ADDED: THE MODAL */}
+      {showOnboarding && (
+        <CodingOnboardingModal 
+            groupId={id!} 
+            groupTopic={group.primary_topic || "Array"} 
+            onClose={() => setShowOnboarding(false)} 
+        />
+      )}
 
       <Card className="border-slate-200 dark:border-slate-700 dark:bg-slate-800 shadow-sm">
         <CardHeader>

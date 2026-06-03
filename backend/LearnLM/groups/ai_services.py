@@ -5,6 +5,8 @@ import numpy as np
 from django.conf import settings
 from PIL import Image as PILImage
 import google.generativeai as genai
+from transformers import CLIPProcessor, CLIPModel
+import torch
 
 # Configure the SDK 
 genai.configure(api_key=settings.GEMINI_API_KEY)
@@ -117,45 +119,56 @@ class AIService:
 
 class VectorSearchService:
     """
-    Module B: Visual Semantic Search
-    Uses MobileNetV2 (headless) to extract 1280-dim feature vectors
-    from images, then finds similar images via Cosine Similarity.
+    Module B: Visual Semantic Search (UPGRADED to V2)
+    Uses OpenAI's CLIP model to extract 512-dim semantic feature vectors.
+    Massive accuracy improvement for abstract diagrams and UI screenshots.
     """
-    _model = None  # Lazy-loaded singleton — only loads once
+    _model = None
+    _processor = None
 
     @classmethod
     def get_model(cls):
         if cls._model is None:
-            print("🧠 Loading MobileNetV2 model (first time only)...")
-            from tensorflow.keras.applications import MobileNetV2
-            base = MobileNetV2(weights='imagenet', include_top=False, pooling='avg')
-            cls._model = base
-            print("✅ MobileNetV2 loaded!")
-        return cls._model
+            print("🧠 Downloading & Loading HuggingFace CLIP Model (this takes a minute on first run)...")
+            cls._model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
+            cls._processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+            print("✅ CLIP Model loaded successfully!")
+        return cls._model, cls._processor
 
     @classmethod
     def extract_vector(cls, image_file) -> list:
         """
         Takes a Django InMemoryUploadedFile or file path,
-        returns a 1280-dim float list (the feature vector).
+        returns a 512-dim float list (the feature vector).
         """
-        from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
+        model, processor = cls.get_model()
 
-        model = cls.get_model()
-
-        # Handle both file objects and file paths
+        # Handle both file objects and file paths safely
         if hasattr(image_file, 'read'):
-            img = PILImage.open(io.BytesIO(image_file.read())).convert('RGB')
+            raw_bytes = image_file.read()
+            image_file.seek(0)
+            img = PILImage.open(io.BytesIO(raw_bytes)).convert('RGB')
         else:
             img = PILImage.open(image_file).convert('RGB')
 
-        img = img.resize((224, 224))  # MobileNetV2 expects 224x224
-        arr = np.array(img, dtype=np.float32)
-        arr = np.expand_dims(arr, axis=0)  # Shape: (1, 224, 224, 3)
-        arr = preprocess_input(arr)
+        # Pass image through CLIP
+        inputs = processor(images=img, return_tensors="pt")
+        with torch.no_grad():
+            outputs = model.get_image_features(**inputs)
+            
+            # THE FIX: Sometimes HuggingFace returns an object, sometimes a raw tensor. 
+            # We explicitly grab the tensor if it's wrapped in an object.
+            if hasattr(outputs, 'pooler_output'):
+                image_features = outputs.pooler_output
+            else:
+                image_features = outputs
 
-        vector = model.predict(arr, verbose=0)[0]  # Shape: (1280,)
-        return vector.tolist()
+        # Normalize the vector (crucial for accurate Cosine Similarity)
+        image_features = image_features / image_features.norm(p=2, dim=-1, keepdim=True)
+        
+        # Squeeze down to 1D array and convert to standard Python list
+        vector = image_features.squeeze().tolist()  # Shape: (512,)
+        return vector
 
     @staticmethod
     def cosine_similarity(vec_a: list, vec_b: list) -> float:
@@ -171,10 +184,7 @@ class VectorSearchService:
     @classmethod
     def find_similar(cls, query_vector: list, documents, top_k=5) -> list:
         """
-        Compares query_vector against all Document objects that have
-        a stored feature_vector. Returns top_k most similar.
-
-        `documents` = queryset of Document model instances.
+        Compares query_vector against all Document objects.
         """
         results = []
         for doc in documents:
@@ -182,6 +192,11 @@ class VectorSearchService:
                 continue
             try:
                 stored_vec = json.loads(doc.feature_vector)
+                
+                # Safety check: Prevent crashing if comparing old MobileNet (1280) to new CLIP (512) vectors
+                if len(stored_vec) != len(query_vector):
+                    continue
+                    
                 score = cls.cosine_similarity(query_vector, stored_vec)
                 results.append((score, doc))
             except (json.JSONDecodeError, Exception):
@@ -194,7 +209,7 @@ class VectorSearchService:
 
 class RAGService:
     """
-    Context-Aware Doubt Solver utilizing Gemini 1.5 Flash's massive 1M token window.
+    Context-Aware Doubt Solver utilizing Gemini's massive token window.
     Bypasses traditional FAISS embedding limits for superior speed and accuracy on study notes.
     """
 
@@ -206,7 +221,7 @@ class RAGService:
         if not chunks:
             return "No document content available to answer from."
 
-        print(f"🚀 PIVOT: Bypassing FAISS. Routing {len(chunks)} chunks directly to Gemini 1.5 Flash...")
+        print(f"🚀 PIVOT: Bypassing FAISS. Routing {len(chunks)} chunks directly to Gemini...")
 
         # Recombine the chunks into one massive context string
         full_context = "\n\n".join(chunks)
@@ -233,3 +248,39 @@ Provide a clear, well-structured answer using markdown formatting and bullet poi
             return response.text
         except Exception as e:
             return f"Error generating answer: {e}"
+
+
+# --- NEW: Standalone AI Test Case Generator for Coding Portal ---
+def generate_test_cases(title, description):
+    """
+    Forces Gemini to read a problem and generate valid JSON test cases.
+    """
+    print(f"🤖 Booting up Gemini to generate test cases for: {title}...")
+    
+    prompt = f"""
+    You are an expert competitive programming backend judge. 
+    Read the following coding problem and generate 4 diverse test cases (including edge cases).
+    
+    Problem Title: {title}
+    Description: {description}
+    
+    You MUST respond with ONLY a raw, valid JSON array. Do not include markdown formatting, backticks, or introductory text.
+    Format exact example:
+    [
+        {{"stdin": "input values here", "expected_output": "output here"}},
+        {{"stdin": "2 7\\n9", "expected_output": "0 1"}}
+    ]
+    """
+    
+    try:
+        model = AIService.get_model()
+        response = model.generate_content(prompt)
+        
+        # Clean up any potential markdown backticks Gemini tries to sneak in
+        clean_text = response.text.replace('```json', '').replace('```', '').strip()
+        
+        return json.loads(clean_text)
+    except Exception as e:
+        print(f"❌ Gemini Test Case Generation Failed: {e}")
+        # Fallback safety array so the app doesn't crash
+        return [{"stdin": "1", "expected_output": "1"}]

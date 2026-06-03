@@ -25,7 +25,8 @@ from .views import (
     # Legacy
     process_document,
 )
-from .coding_views import CodeRunView, CodeSubmitView, CodingProfileView
+
+from .coding_views import CodeRunView, CodeSubmitView, CodingOnboardingView, CodingProfileView, NextProblemView
 
 # ── ViewSet router ───────────────────────────────────────────
 router = DefaultRouter()
@@ -62,6 +63,8 @@ urlpatterns = [
     path('code/run/',       CodeRunView.as_view(),        name='code-run'),
     path('code/submit/',    CodeSubmitView.as_view(),      name='code-submit'),
     path('code/profile/',   CodingProfileView.as_view(),   name='code-profile'),
+    # 👇 FIX APPLIED HERE 👇
+    path('code/next/',      NextProblemView.as_view(),     name='code-next'),
 
     # ── Module B: Visual Search ──────────────────────────────
     path('visual-search/upload/', VisualSearchUploadView.as_view(), name='visual-search-upload'),
@@ -82,4 +85,7 @@ urlpatterns = [
 
     # ── Legacy ──────────────────────────────────────────────
     path('upload-pdf/', process_document, name='process_document'),
+
+    # Add this under your Module C section in urls.py
+    path('code/onboard/', CodingOnboardingView.as_view(), name='code-onboard'),
 ]

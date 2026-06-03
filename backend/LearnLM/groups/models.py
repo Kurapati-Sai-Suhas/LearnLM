@@ -1,7 +1,8 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
-from datetime import timedelta
+from datetime import timedelta, timezone
 from django.conf import settings
+from django.utils import timezone
 
 
 class User(AbstractUser):
@@ -27,6 +28,7 @@ class StudyGroup(models.Model):
     join_code = models.CharField(max_length=10, unique=True)
     capacity = models.IntegerField(default=50)
     created_at = models.DateTimeField(auto_now_add=True)
+    has_coding_portal = models.BooleanField(default=False)
 
     def __str__(self):
         return self.name
@@ -54,7 +56,7 @@ class StudyMaterial(models.Model):
 class UserActivityLog(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     activity_type = models.CharField(max_length=100)
-    timestamp = models.DateTimeField(default=timedelta(seconds=0))
+    timestamp = models.DateTimeField(default=timezone.now)
     last_updated = models.DateTimeField(auto_now=True)
 
     def __str__(self):
@@ -229,3 +231,51 @@ class GroupMessage(models.Model):
 
     def __str__(self):
         return f"[{self.group.name}] {self.sender.username}: {self.content[:40]}"
+
+class Topic(models.Model):
+    STRUCTURE_CHOICES = [
+        ('hierarchical', 'Hierarchical (GNN)'),
+        ('flat', 'Flat (Elo)')
+    ]
+    name = models.CharField(max_length=100, unique=True)
+    structure_type = models.CharField(max_length=20, choices=STRUCTURE_CHOICES)
+    def __str__(self):
+        return self.name
+
+class Question(models.Model):
+    topic = models.ForeignKey(Topic, on_delete=models.CASCADE)
+    title = models.CharField(max_length=255)
+    content = models.TextField() # The problem description
+    base_difficulty = models.FloatField(default=1200.0) # Starting Elo
+    hidden_test_cases = models.JSONField(null=True, blank=True)
+    boilerplate_code = models.JSONField(default=dict)
+    hidden_test_cases = models.JSONField(default=list)
+    def __str__(self):
+        return self.title
+
+class UserProgress(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    topic = models.ForeignKey(Topic, on_delete=models.CASCADE)
+    elo_rating = models.FloatField(default=1200.0)
+    gnn_embedding = models.JSONField(null=True, blank=True)
+    last_practiced = models.DateTimeField(default=timezone.now) 
+    
+class UserTopicMastery(models.Model):
+    """
+    Tracks a user's specific performance on individual topics to feed the PyTorch Tensor.
+    """
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='topic_mastery')
+    subject = models.CharField(max_length=100, default="Data Structures")
+    topic = models.CharField(max_length=100) # e.g., "Arrays", "Binary Search"
+    
+    # Tensor Features
+    accuracy = models.FloatField(default=0.0)  # e.g., 0.85 for 85%
+    reviews = models.IntegerField(default=0)
+    elo_rating = models.FloatField(default=1200.0)
+    last_practiced = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        unique_together = ('user', 'subject', 'topic')
+
+    def __str__(self):
+        return f"{self.user.username} - {self.topic} ({self.elo_rating})"# For the Deep Learning engine later

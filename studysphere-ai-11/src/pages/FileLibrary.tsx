@@ -247,7 +247,7 @@ export default function FileLibrary() {
             {selectedFile && isImage(selectedFile.name) && (
               <p className="text-xs text-blue-600 mt-2 flex items-center gap-1">
                 <ImageIcon className="w-3 h-3" />
-                This image will be automatically indexed for AI Visual Search (MobileNetV2)
+                This image will be automatically indexed for AI Visual Search
               </p>
             )}
           </CardContent>

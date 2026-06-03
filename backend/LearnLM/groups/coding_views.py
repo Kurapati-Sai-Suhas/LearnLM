@@ -2,9 +2,18 @@
 import os
 import base64
 import requests
+from django.db.models import F, Func
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+
+# Import Models
+from .models import CodeSubmission, UserCodingProfile, Question, Topic
+
+# Import AI Engines & Services
+from .engines.elo_engine import EloEngine
+from .engines.gnn_engine import GNNKnowledgeGraph
+from .ai_services import generate_test_cases
 
 LANGUAGE_IDS = {
     "python": 71,
@@ -15,8 +24,7 @@ LANGUAGE_IDS = {
 }
 
 JUDGE0_BASE = os.environ.get('JUDGE0_URL', 'https://judge0-ce.p.rapidapi.com')
-JUDGE0_KEY  = os.environ.get('JUDGE0_RAPIDAPI_KEY', '')
-
+JUDGE0_KEY  = os.environ.get('JUDGE0_API_KEY')
 
 def _run_on_judge0(source_code: str, language: str, stdin: str = "") -> dict:
     language_id = LANGUAGE_IDS.get(language.lower())
@@ -30,6 +38,7 @@ def _run_on_judge0(source_code: str, language: str, stdin: str = "") -> dict:
         "base64_encoded": True,
         "wait":           True,
     }
+    
     headers = {
         "Content-Type":    "application/json",
         "X-RapidAPI-Key":  JUDGE0_KEY,
@@ -68,9 +77,8 @@ def _run_on_judge0(source_code: str, language: str, stdin: str = "") -> dict:
 
 class CodeRunView(APIView):
     """
-    REQ-3.2: Run code in isolation.
+    REQ-3.2: Run code in isolation (Used for the "Run Code" button).
     POST /api/code/run/
-    { "code": "print('hi')", "language": "python", "stdin": "" }
     """
     permission_classes = [IsAuthenticated]
 
@@ -78,9 +86,12 @@ class CodeRunView(APIView):
         code     = request.data.get('code', '').strip()
         language = request.data.get('language', 'python')
         stdin    = request.data.get('stdin', '')
+        
         if not code:
             return Response({"error": "code is required"}, status=400)
+            
         result = _run_on_judge0(code, language, stdin)
+        
         if "error" in result:
             return Response(result, status=400)
         return Response(result)
@@ -88,12 +99,8 @@ class CodeRunView(APIView):
 
 class CodeSubmitView(APIView):
     """
-    REQ-3.2 + REQ-3.3: Submit code against test cases, log result, update Elo.
+    REQ-3.2 + REQ-3.3: Submit code against hidden test cases, log result, update Elo.
     POST /api/code/submit/
-    {
-        "code": "...", "language": "python", "problem_id": "two-sum",
-        "test_cases": [{ "stdin": "2 7\n9", "expected_output": "0 1" }]
-    }
     """
     permission_classes = [IsAuthenticated]
 
@@ -109,6 +116,7 @@ class CodeSubmitView(APIView):
         passed  = 0
         results = []
 
+        # 1. Run all test cases
         for i, tc in enumerate(test_cases):
             verdict  = _run_on_judge0(code, language, tc.get('stdin', ''))
             expected = tc.get('expected_output', '').strip()
@@ -117,6 +125,7 @@ class CodeSubmitView(APIView):
 
             if ok:
                 passed += 1
+                
             results.append({
                 "test_case":       i + 1,
                 "passed":          ok,
@@ -131,29 +140,42 @@ class CodeSubmitView(APIView):
         all_passed = passed == total
         final_status = "accepted" if all_passed else "wrong_answer"
 
-        # REQ-3.3: Log to DB
-        from .models import CodeSubmission, UserCodingProfile
+        # 2. Log submission to the database
         submission = CodeSubmission.objects.create(
             user=request.user,
             problem_id=problem_id,
             language=language,
             code=code,
             status=final_status,
-            execution_time_ms=int(float(results[0]['time'] or 0) * 1000) if results else None,
+            execution_time_ms=int(float(results[0]['time'] or 0) * 1000) if results and results[0].get('time') else None,
             memory_used_kb=results[0]['memory'] if results else None,
         )
 
-        # Update Elo
+        # 3. Update User's Profile Stats & Elo Rating
         profile, _ = UserCodingProfile.objects.get_or_create(user=request.user)
         profile.total_submissions += 1
+        
         if all_passed:
             profile.successful_submissions += 1
 
-        from .hybrid_router import EloEngine
-        elo_result = EloEngine.update_rating(profile.elo_rating, 1200.0, all_passed)
+        # Calculate new Elo
+        try:
+            question = Question.objects.get(id=problem_id)
+            difficulty = question.base_difficulty
+        except (Question.DoesNotExist, ValueError):
+            difficulty = 1200.0
+
+        elo_result = EloEngine.calculate_new_rating(
+            user_rating=profile.elo_rating, 
+            question_difficulty=difficulty, 
+            is_correct=all_passed
+        )
+        
+        # Save the updated rating
         profile.elo_rating = elo_result["new_rating"]
         profile.save()
 
+        # 4. Return data to React frontend
         return Response({
             "submission_id": submission.id,
             "status":        final_status,
@@ -167,11 +189,12 @@ class CodeSubmitView(APIView):
 
 
 class CodingProfileView(APIView):
-    """GET /api/code/profile/ — Elo, stats, last 10 submissions."""
+    """
+    GET /api/code/profile/ — Returns Elo, stats, and last 10 submissions.
+    """
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        from .models import CodeSubmission, UserCodingProfile
         profile, _ = UserCodingProfile.objects.get_or_create(user=request.user)
         recent = CodeSubmission.objects.filter(user=request.user).order_by('-submitted_at')[:10]
 
@@ -192,3 +215,120 @@ class CodingProfileView(APIView):
                 for s in recent
             ],
         })
+
+
+class NextProblemView(APIView):
+    """
+    REQ-4.2 & REQ-4.3 & REQ-4.4: The Traffic Cop (Hybrid Routing).
+    Routes to GNN for structured topics (DSA), or Elo for unstructured topics (Trivia).
+    GET /api/code/next/?topic=Array
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        profile, _ = UserCodingProfile.objects.get_or_create(user=request.user)
+        target_elo = profile.elo_rating
+        
+        # Default to 'Array' if no topic is provided by the frontend
+        topic_name = request.query_params.get('topic', 'Array')
+        
+        try:
+            topic = Topic.objects.get(name__iexact=topic_name)
+        except Topic.DoesNotExist:
+            topic = Topic.objects.first() # Fallback
+
+        solved_ids = CodeSubmission.objects.filter(
+            user=request.user, status='accepted'
+        ).values_list('problem_id', flat=True)
+
+        question = None
+        xai_explanation = ""
+        advanced_data = None # 👇 ADDED: Initialize the advanced data payload
+
+        # 🚥 ROUTE 1: HIERARCHICAL (PYTORCH GNN ENGINE)
+        if topic and topic.structure_type == 'hierarchical':
+            print(f"🚥 Traffic Cop: Routing to PyTorch GNN Engine for {topic.name}")
+            gnn = GNNKnowledgeGraph()
+            
+            # 👇 UPDATED: Get the full rich JSON payload from the new GNN Engine
+            optimal_node = gnn.get_next_optimal_topic(request.user)
+            
+            target_topic_name = optimal_node.get("recommended_topic", topic.name)
+            xai_explanation = optimal_node.get("reason", f"🧠 XAI Insight: Mathematically selected as the optimal node for {topic.name}.")
+            advanced_data = optimal_node # Store the payload to send to React
+
+            # Find a question specifically in the GNN-recommended topic closest to Elo
+            question = Question.objects.filter(topic__name=target_topic_name).exclude(id__in=solved_ids).annotate(
+                elo_diff=Func(F('base_difficulty') - target_elo, function='ABS')
+            ).order_by('elo_diff').first()
+
+        # 🚥 ROUTE 2: FLAT (ELO ENGINE)
+        elif topic:
+            print(f"🚥 Traffic Cop: Routing to Flat Elo Engine for {topic.name}")
+            xai_explanation = f"📈 XAI Insight: Dynamically matched to your current skill level (Elo: {target_elo})."
+            
+            # Find the question closest to user's Elo in this flat topic (REQ-4.4)
+            question = Question.objects.filter(topic=topic).exclude(id__in=solved_ids).annotate(
+                elo_diff=Func(F('base_difficulty') - target_elo, function='ABS')
+            ).order_by('elo_diff').first()
+
+        # Fallback if the specific topic is completely solved
+        if not question:
+            question = Question.objects.exclude(id__in=solved_ids).first()
+            if not question:
+                return Response({"error": "You have solved every problem in the database!"}, status=404)
+
+        # 🤖 AI TEST CASE GENERATION FALLBACK
+        if not question.hidden_test_cases:
+            print(f"🤖 Booting Gemini to generate test cases for: {question.title}...")
+            generated_cases = generate_test_cases(question.title, question.content)
+            question.hidden_test_cases = generated_cases
+            question.save()
+
+        # Format Difficulty
+        if question.base_difficulty < 1100: diff_text = "Easy"
+        elif question.base_difficulty < 1400: diff_text = "Medium"
+        else: diff_text = "Hard"
+
+        # 👇 UPDATED: Send the advanced_data payload to React
+        return Response({
+            "id": str(question.pk),
+            "title": f"[{question.topic.name}] {question.title}",
+            "difficulty": diff_text,
+            "description": question.content, # Make sure your DB actually has the text here!
+            "explanation": xai_explanation,
+            "boilerplate_code": question.boilerplate_code, # 👈 Send the starter code!
+            "hiddenTestCases": question.hidden_test_cases,
+            "advanced_xai": advanced_data
+        })
+    
+class CodingOnboardingView(APIView):
+    """
+    POST /api/code/onboard/
+    Saves the topics a user already knows so the GNN skips them.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        known_topics = request.data.get('known_topics', []) # e.g., ["Array", "String"]
+        
+        for topic_name in known_topics:
+            try:
+                # Find a random problem in this topic to mark as "solved"
+                question = Question.objects.filter(topic__name__iexact=topic_name).first()
+                if question:
+                    CodeSubmission.objects.get_or_create(
+                        user=request.user,
+                        problem_id=str(question.id),
+                        defaults={
+                            'language': 'python',
+                            'code': '# Skipped via Onboarding',
+                            'status': 'accepted',
+                            'execution_time_ms': 10,
+                            'memory_used_kb': 1024
+                        }
+                    )
+            except Exception as e:
+                print(f"Error onboarding topic {topic_name}: {e}")
+
+        return Response({"message": "Onboarding complete! GNN updated."})

@@ -1,10 +1,14 @@
 import os
 import json
+import io
+import zipfile
+import fitz  # PyMuPDF
 import PyPDF2
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db.models import Avg, Sum, Q
+from django.core.files.base import ContentFile  # 👈 NEW: Required to save extracted bytes as real files
 
 from rest_framework import viewsets, generics, filters, permissions, parsers, status
 from rest_framework.views import APIView
@@ -129,8 +133,44 @@ class StudyGroupViewSet(viewsets.ModelViewSet):
 
 
 # ─────────────────────────────────────────────────────────────
-# Study Materials
+# Study Materials & Document Extraction Pipeline
 # ─────────────────────────────────────────────────────────────
+
+def extract_images_from_document(file_obj, filename):
+    """
+    Cracks open PDFs and DOCX files to extract raw images directly from memory.
+    Returns a list of io.BytesIO image objects ready for MobileNetV2.
+    """
+    images = []
+    file_bytes = file_obj.read()
+    file_obj.seek(0)  # CRITICAL: Reset pointer so Django can still save the original file
+    
+    lower_name = filename.lower()
+    
+    try:
+        if lower_name.endswith('.pdf'):
+            print(f"📄 Scanning PDF: {filename} for diagrams...")
+            pdf_doc = fitz.open(stream=file_bytes, filetype="pdf")
+            for page_num in range(len(pdf_doc)):
+                page = pdf_doc.load_page(page_num)
+                for img in page.get_images(full=True):
+                    xref = img[0]
+                    base_image = pdf_doc.extract_image(xref)
+                    images.append(io.BytesIO(base_image["image"]))
+                    
+        elif lower_name.endswith('.docx'):
+            print(f"📝 Unzipping DOCX: {filename} for diagrams...")
+            with zipfile.ZipFile(io.BytesIO(file_bytes)) as docx_zip:
+                for item in docx_zip.namelist():
+                    # Microsoft Word secretly stores all images in this internal folder
+                    if item.startswith('word/media/') and item.lower().endswith(('.png', '.jpeg', '.jpg')):
+                        images.append(io.BytesIO(docx_zip.read(item)))
+    except Exception as e:
+        print(f"⚠️ Extraction warning for {filename}: {e}")
+        
+    print(f"🔍 Found {len(images)} images hidden inside {filename}")
+    return images
+
 
 class MaterialViewSet(viewsets.ModelViewSet):
     queryset           = StudyMaterial.objects.all().order_by('-upload_date')
@@ -143,8 +183,49 @@ class MaterialViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         group_id = self.request.data.get('study_group')
-        print(f"📦 Uploading file... Group ID: {group_id}")
-        serializer.save(uploaded_by=self.request.user, study_group_id=group_id)
+        print(f"📦 Uploading file to library... Group ID: {group_id}")
+        
+        # 1. Save normally to the File Library
+        material = serializer.save(uploaded_by=self.request.user, study_group_id=group_id)
+        file_name = material.file.name.lower()
+
+        # 2. THE PIPELINE: Prepare images for MobileNetV2
+        images_to_index = []
+
+        if file_name.endswith(('.png', '.jpg', '.jpeg')):
+            # It's a direct image, just add it to the queue
+            images_to_index.append((material.file, material.title))
+        
+        elif file_name.endswith(('.pdf', '.docx')):
+            # It's a document, rip the images out of it!
+            extracted_images = extract_images_from_document(material.file, file_name)
+            for idx, img_bytes in enumerate(extracted_images):
+                # Give each extracted diagram a unique name (e.g., "Chapter 3 - Diagram 1")
+                images_to_index.append((img_bytes, f"{material.title} - Diagram {idx + 1}"))
+
+        # 3. INDEXING: Pass everything we found through MobileNetV2
+        for img_data, img_title in images_to_index:
+            try:
+                print(f"🤖 Auto-indexing '{img_title}' for AI Semantic Search...")
+                vector = VectorSearchService.extract_vector(img_data)
+                
+                # 👈 THE FIX: We must save the extracted bytes as a real .jpg file so the browser can render it!
+                img_data.seek(0)
+                safe_filename = img_title.replace(" ", "_").replace("/", "_") + ".jpg"
+                actual_image_file = ContentFile(img_data.read(), name=safe_filename)
+                
+                Document.objects.create(
+                    group=material.study_group,
+                    uploaded_by=self.request.user,
+                    title=img_title,
+                    file=actual_image_file,  # Link to the newly created JPG file!
+                    file_type='image',
+                    feature_vector=json.dumps(vector),
+                )
+            except Exception as e:
+                print(f"❌ AI Indexing failed for {img_title}: {e}")
+                
+        print("✅ Pipeline execution complete!")
 
 
 # ─────────────────────────────────────────────────────────────

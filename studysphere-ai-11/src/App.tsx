@@ -11,6 +11,8 @@ import AIFlashcards from "./pages/AIFlashcards";
 import AIQuiz from "./pages/AIQuiz";
 import QuizTaking from "./pages/QuizTaking";
 import DoubtSolver from "./pages/DoubtSolver";
+import CodingPortal from "./components/CodingPortal"; 
+import AdaptiveCodingPortal from "./pages/AdaptiveCodingPortal"; // 👈 1. ADDED OUR NEW IMPORT HERE!
 // 🗑️ Removed AITutor import!
 import Schedule from "./pages/Schedule";
 import FileLibrary from "./pages/FileLibrary";
@@ -60,7 +62,12 @@ const App = () => (
                     <Route path="/quiz" element={<AIQuiz />} />
                     <Route path="/quiz/take/:quizId" element={<QuizTaking />} />
                     <Route path="/doubt-solver" element={<DoubtSolver />} />
+                    
+                    {/* Your old standard coding portal */}
+                    <Route path="/code" element={<CodingPortal />} />
 
+                    {/* 👇 2. ADDED THE NEW ADAPTIVE PORTAL ROUTE HERE 👇 */}
+                    <Route path="/coding-portal" element={<AdaptiveCodingPortal />} />
 
                     <Route path="/schedule" element={<Schedule />} />
                     <Route path="/files" element={<FileLibrary />} />
