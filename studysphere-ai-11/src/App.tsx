@@ -22,6 +22,7 @@ import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 import { ThemeProvider } from "@/components/theme-provider"
 import Friends from "./pages/Friends";
+import CodingHub from './pages/CodingHub';
 
 const queryClient = new QueryClient();
 
@@ -62,7 +63,7 @@ const App = () => (
                     <Route path="/quiz" element={<AIQuiz />} />
                     <Route path="/quiz/take/:quizId" element={<QuizTaking />} />
                     <Route path="/doubt-solver" element={<DoubtSolver />} />
-                    
+                    <Route path="/coding-hub" element={<CodingHub />} />
                     {/* Your old standard coding portal */}
                     <Route path="/code" element={<CodingPortal />} />
 

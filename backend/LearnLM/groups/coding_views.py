@@ -1,4 +1,3 @@
-# groups/coding_views.py
 import os
 import base64
 import requests
@@ -9,6 +8,8 @@ from rest_framework.permissions import IsAuthenticated
 
 # Import Models
 from .models import CodeSubmission, UserCodingProfile, Question, Topic
+from .models import CodingPortal
+from .serializers import CodingPortalSerializer
 
 # Import AI Engines & Services
 from .engines.elo_engine import EloEngine
@@ -83,14 +84,28 @@ class CodeRunView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        code     = request.data.get('code', '').strip()
+        raw_code = request.data.get('code', '').strip()
         language = request.data.get('language', 'python')
         stdin    = request.data.get('stdin', '')
+        problem_id = request.data.get('problem_id', None)
         
-        if not code:
+        if not raw_code:
             return Response({"error": "code is required"}, status=400)
             
-        result = _run_on_judge0(code, language, stdin)
+        executable_code = raw_code
+        lang_key = language.lower()
+
+        # Dynamic Wrapper Injection for Code Run
+        if problem_id:
+            try:
+                question = Question.objects.get(id=problem_id)
+                if question.hidden_wrapper_code and lang_key in question.hidden_wrapper_code:
+                    wrapper_template = question.hidden_wrapper_code[lang_key]
+                    executable_code = wrapper_template.replace("{user_code}", raw_code)
+            except Question.DoesNotExist:
+                pass
+
+        result = _run_on_judge0(executable_code, language, stdin)
         
         if "error" in result:
             return Response(result, status=400)
@@ -105,20 +120,45 @@ class CodeSubmitView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        code       = request.data.get('code', '').strip()
+        raw_code   = request.data.get('code', '').strip()
         language   = request.data.get('language', 'python')
         problem_id = request.data.get('problem_id', 'unknown')
         test_cases = request.data.get('test_cases', [])
 
-        if not code:
+        if not raw_code:
             return Response({"error": "code is required"}, status=400)
+
+        # 🚀 Fetch the Question from DB
+        try:
+            question = Question.objects.get(id=problem_id)
+            difficulty = question.base_difficulty
+        except (Question.DoesNotExist, ValueError):
+            return Response({"error": "Question not found"}, status=404)
+
+        # ---------------------------------------------------------
+        # 🚀 THE STRICT DATABASE WRAPPER ENGINE
+        # ---------------------------------------------------------
+        executable_code = raw_code
+        lang_key = language.lower()
+
+        # We ONLY use the wrapper from the database now. No hardcoding.
+        if question.hidden_wrapper_code and lang_key in question.hidden_wrapper_code:
+            wrapper_template = question.hidden_wrapper_code[lang_key]
+            executable_code = wrapper_template.replace("{user_code}", raw_code)
+        else:
+            # If the database is missing the wrapper, fail instantly so we can see the error!
+            return Response(
+                {"error": f"No '{lang_key}' wrapper configured in the database for problem ID {problem_id}."}, 
+                status=400
+            )
+        # ---------------------------------------------------------
 
         passed  = 0
         results = []
 
-        # 1. Run all test cases
+        # 1. Run all test cases USING THE WRAPPED CODE
         for i, tc in enumerate(test_cases):
-            verdict  = _run_on_judge0(code, language, tc.get('stdin', ''))
+            verdict  = _run_on_judge0(executable_code, language, tc.get('stdin', ''))
             expected = tc.get('expected_output', '').strip()
             actual   = verdict.get('stdout', '').strip()
             ok       = (actual == expected) and verdict.get('status_id') == 3
@@ -145,7 +185,7 @@ class CodeSubmitView(APIView):
             user=request.user,
             problem_id=problem_id,
             language=language,
-            code=code,
+            code=raw_code,
             status=final_status,
             execution_time_ms=int(float(results[0]['time'] or 0) * 1000) if results and results[0].get('time') else None,
             memory_used_kb=results[0]['memory'] if results else None,
@@ -158,20 +198,17 @@ class CodeSubmitView(APIView):
         if all_passed:
             profile.successful_submissions += 1
 
-        # Calculate new Elo
-        try:
-            question = Question.objects.get(id=problem_id)
-            difficulty = question.base_difficulty
-        except (Question.DoesNotExist, ValueError):
-            difficulty = 1200.0
+        exec_time = int(float(results[0]['time'] or 0) * 1000) if results and results[0].get('time') else None
+        mem_used = results[0]['memory'] if results else None
 
         elo_result = EloEngine.calculate_new_rating(
             user_rating=profile.elo_rating, 
             question_difficulty=difficulty, 
-            is_correct=all_passed
+            is_correct=all_passed,
+            execution_time_ms=exec_time,
+            memory_used_kb=mem_used
         )
         
-        # Save the updated rating
         profile.elo_rating = elo_result["new_rating"]
         profile.save()
 
@@ -237,27 +274,34 @@ class NextProblemView(APIView):
         except Topic.DoesNotExist:
             topic = Topic.objects.first() # Fallback
 
-        solved_ids = CodeSubmission.objects.filter(
+        # --- Safely cast problem IDs to Integers ---
+        raw_solved_ids = CodeSubmission.objects.filter(
             user=request.user, status='accepted'
         ).values_list('problem_id', flat=True)
 
+        solved_ids = []
+        for pid in raw_solved_ids:
+            try:
+                solved_ids.append(int(pid))
+            except (ValueError, TypeError):
+                pass 
+        # -------------------------------------------
+
         question = None
         xai_explanation = ""
-        advanced_data = None # 👇 ADDED: Initialize the advanced data payload
+        advanced_data = None 
 
         # 🚥 ROUTE 1: HIERARCHICAL (PYTORCH GNN ENGINE)
         if topic and topic.structure_type == 'hierarchical':
             print(f"🚥 Traffic Cop: Routing to PyTorch GNN Engine for {topic.name}")
             gnn = GNNKnowledgeGraph()
             
-            # 👇 UPDATED: Get the full rich JSON payload from the new GNN Engine
             optimal_node = gnn.get_next_optimal_topic(request.user)
             
             target_topic_name = optimal_node.get("recommended_topic", topic.name)
             xai_explanation = optimal_node.get("reason", f"🧠 XAI Insight: Mathematically selected as the optimal node for {topic.name}.")
-            advanced_data = optimal_node # Store the payload to send to React
+            advanced_data = optimal_node 
 
-            # Find a question specifically in the GNN-recommended topic closest to Elo
             question = Question.objects.filter(topic__name=target_topic_name).exclude(id__in=solved_ids).annotate(
                 elo_diff=Func(F('base_difficulty') - target_elo, function='ABS')
             ).order_by('elo_diff').first()
@@ -267,12 +311,10 @@ class NextProblemView(APIView):
             print(f"🚥 Traffic Cop: Routing to Flat Elo Engine for {topic.name}")
             xai_explanation = f"📈 XAI Insight: Dynamically matched to your current skill level (Elo: {target_elo})."
             
-            # Find the question closest to user's Elo in this flat topic (REQ-4.4)
-            question = Question.objects.filter(topic=topic).exclude(id__in=solved_ids).annotate(
+            question = Question.objects.filter(topic__name=topic.name).exclude(id__in=solved_ids).annotate(
                 elo_diff=Func(F('base_difficulty') - target_elo, function='ABS')
             ).order_by('elo_diff').first()
 
-        # Fallback if the specific topic is completely solved
         if not question:
             question = Question.objects.exclude(id__in=solved_ids).first()
             if not question:
@@ -285,19 +327,17 @@ class NextProblemView(APIView):
             question.hidden_test_cases = generated_cases
             question.save()
 
-        # Format Difficulty
         if question.base_difficulty < 1100: diff_text = "Easy"
         elif question.base_difficulty < 1400: diff_text = "Medium"
         else: diff_text = "Hard"
 
-        # 👇 UPDATED: Send the advanced_data payload to React
         return Response({
             "id": str(question.pk),
             "title": f"[{question.topic.name}] {question.title}",
             "difficulty": diff_text,
-            "description": question.content, # Make sure your DB actually has the text here!
+            "description": question.content, 
             "explanation": xai_explanation,
-            "boilerplate_code": question.boilerplate_code, # 👈 Send the starter code!
+            "boilerplate_code": question.boilerplate_code, 
             "hiddenTestCases": question.hidden_test_cases,
             "advanced_xai": advanced_data
         })
@@ -310,16 +350,15 @@ class CodingOnboardingView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        known_topics = request.data.get('known_topics', []) # e.g., ["Array", "String"]
+        known_topics = request.data.get('known_topics', []) 
         
         for topic_name in known_topics:
             try:
-                # Find a random problem in this topic to mark as "solved"
                 question = Question.objects.filter(topic__name__iexact=topic_name).first()
                 if question:
                     CodeSubmission.objects.get_or_create(
                         user=request.user,
-                        problem_id=str(question.id),
+                        problem_id=str(question.pk),
                         defaults={
                             'language': 'python',
                             'code': '# Skipped via Onboarding',
@@ -332,3 +371,16 @@ class CodingOnboardingView(APIView):
                 print(f"Error onboarding topic {topic_name}: {e}")
 
         return Response({"message": "Onboarding complete! GNN updated."})
+    
+
+class CodingPortalListView(APIView):
+    """
+    GET /api/coding-portals/
+    Returns a list of all active global coding courses (e.g., DSA, OS).
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        portals = CodingPortal.objects.filter(is_active=True)
+        serializer = CodingPortalSerializer(portals, many=True)
+        return Response(serializer.data)

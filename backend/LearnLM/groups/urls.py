@@ -26,7 +26,7 @@ from .views import (
     process_document,
 )
 
-from .coding_views import CodeRunView, CodeSubmitView, CodingOnboardingView, CodingProfileView, NextProblemView
+from .coding_views import CodeRunView, CodeSubmitView, CodingOnboardingView, CodingProfileView, NextProblemView, CodingPortalListView
 
 # ── ViewSet router ───────────────────────────────────────────
 router = DefaultRouter()
@@ -59,12 +59,15 @@ urlpatterns = [
     path('ai/recommend/',   HybridRouterView.as_view(), name='hybrid-router'),
     path('ai/mastery-map/', MasteryMapView.as_view(),   name='mastery-map'),
 
-    # ── Module C: Coding Portal ──────────────────────────────
+    # ── Module C: Coding Portal (V2) ─────────────────────────
+    # 👇 NEW: Fetch Global Portals
+    path('coding-portals/', CodingPortalListView.as_view(), name='coding-portals-list'),
+    
     path('code/run/',       CodeRunView.as_view(),        name='code-run'),
     path('code/submit/',    CodeSubmitView.as_view(),      name='code-submit'),
     path('code/profile/',   CodingProfileView.as_view(),   name='code-profile'),
-    # 👇 FIX APPLIED HERE 👇
     path('code/next/',      NextProblemView.as_view(),     name='code-next'),
+    path('code/onboard/',   CodingOnboardingView.as_view(), name='code-onboard'),
 
     # ── Module B: Visual Search ──────────────────────────────
     path('visual-search/upload/', VisualSearchUploadView.as_view(), name='visual-search-upload'),
@@ -85,7 +88,4 @@ urlpatterns = [
 
     # ── Legacy ──────────────────────────────────────────────
     path('upload-pdf/', process_document, name='process_document'),
-
-    # Add this under your Module C section in urls.py
-    path('code/onboard/', CodingOnboardingView.as_view(), name='code-onboard'),
 ]

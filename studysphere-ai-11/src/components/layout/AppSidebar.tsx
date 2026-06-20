@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { 
   Home, Users, Calendar, FileText, Brain, MessageSquare, 
   BookOpen, Bell, Settings, LogOut, FolderOpen, UserPlus,
-  ChevronLeft 
+  ChevronLeft, Terminal 
 } from "lucide-react";
 import { NavLink, useNavigate } from "react-router-dom";
 import {
@@ -14,9 +14,11 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { authAPI, userAPI } from "@/services/api"; 
 
+// 👇 INJECTED THE CODING HUB RIGHT BELOW STUDY GROUPS
 const menuItems = [
   { title: "Dashboard", url: "/", icon: Home },
   { title: "Study Groups", url: "/groups", icon: Users },
+  { title: "Coding Hub", url: "/coding-hub", icon: Terminal }, 
   { title: "Friends", url: "/friends", icon: UserPlus },
   { title: "AI Flashcards", url: "/flashcards", icon: BookOpen },
   { title: "AI Quiz", url: "/quiz", icon: Brain },
@@ -31,7 +33,6 @@ const bottomMenuItems = [
 ];
 
 export function AppSidebar() {
-  // `state` tells us if it is expanded or collapsed
   const { state, toggleSidebar, isMobile } = useSidebar(); 
   const navigate = useNavigate();
   const [user, setUser] = useState({ username: "Loading...", role: "Student" });
@@ -58,7 +59,6 @@ export function AppSidebar() {
     ? user.username.charAt(0).toUpperCase() : "?";
 
   return (
-    // 👇 Set to "icon" to minimize, and added hidden scrollbar trick
     <Sidebar collapsible="icon" className="border-r border-sidebar-border shadow-xl [&::-webkit-scrollbar]:hidden">
       
       <SidebarHeader className="border-b border-sidebar-border p-4 relative">
@@ -78,7 +78,6 @@ export function AppSidebar() {
           )}
         </div>
 
-        {/* 🌟 CATCHY FLOATING MINIMIZE BUTTON 🌟 */}
         {!isMobile && (
           <Button 
             onClick={toggleSidebar} 
