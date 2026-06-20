@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, BrainCircuit, Sparkles, ChevronLeft, ChevronRight } from "lucide-react";
+import { Loader2, BrainCircuit,  ChevronLeft, ChevronRight } from "lucide-react";
 import { motion } from "framer-motion";
 import 'katex/dist/katex.min.css';
 import Latex from 'react-latex-next';
@@ -143,7 +143,7 @@ export default function AIFlashcards() {
                 onChange={(e) => setTopic(e.target.value)}
               />
               <Button onClick={handleGenerate} disabled={loading || !selectedMaterialId} className="bg-purple-600 hover:bg-purple-700">
-                {loading ? <Loader2 className="animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
+                {loading ? <Loader2 className="animate-spin" /> : null}
                 Generate
               </Button>
             </div>

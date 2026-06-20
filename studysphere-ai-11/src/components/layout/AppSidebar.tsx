@@ -1,27 +1,19 @@
 import { useEffect, useState } from "react";
-import { 
-  Home, Users, Calendar, FileText, Brain, MessageSquare, 
-  BookOpen, Bell, Settings, LogOut, FolderOpen, UserPlus,
-  ChevronLeft, Terminal 
-} from "lucide-react";
-import { NavLink, useNavigate } from "react-router-dom";
 import {
-  Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent,
-  SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem,
-  SidebarHeader, SidebarFooter, useSidebar,
-} from "@/components/ui/sidebar";
+  Home, Users, Calendar, MessageSquare, Layers, ListChecks,
+  Bell, Settings, LogOut, FolderOpen, UserPlus, Terminal,
+} from "lucide-react";
+import { NavLink } from "react-router-dom";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
-import { authAPI, userAPI } from "@/services/api"; 
+import { authAPI, userAPI } from "@/services/api";
 
-// 👇 INJECTED THE CODING HUB RIGHT BELOW STUDY GROUPS
 const menuItems = [
   { title: "Dashboard", url: "/", icon: Home },
   { title: "Study Groups", url: "/groups", icon: Users },
-  { title: "Coding Hub", url: "/coding-hub", icon: Terminal }, 
+  { title: "Coding Hub", url: "/coding-hub", icon: Terminal },
   { title: "Friends", url: "/friends", icon: UserPlus },
-  { title: "AI Flashcards", url: "/flashcards", icon: BookOpen },
-  { title: "AI Quiz", url: "/quiz", icon: Brain },
+  { title: "Flashcards", url: "/flashcards", icon: Layers },
+  { title: "Quizzes", url: "/quiz", icon: ListChecks },
   { title: "Doubt Solver", url: "/doubt-solver", icon: MessageSquare },
   { title: "Schedule", url: "/schedule", icon: Calendar },
   { title: "File Library", url: "/files", icon: FolderOpen },
@@ -33,8 +25,6 @@ const bottomMenuItems = [
 ];
 
 export function AppSidebar() {
-  const { state, toggleSidebar, isMobile } = useSidebar(); 
-  const navigate = useNavigate();
   const [user, setUser] = useState({ username: "Loading...", role: "Student" });
 
   useEffect(() => {
@@ -52,99 +42,105 @@ export function AppSidebar() {
   }, []);
 
   const handleLogout = () => {
-    authAPI.logout(); 
+    authAPI.logout();
   };
 
-  const userInitials = user.username && user.username !== "Loading..."
-    ? user.username.charAt(0).toUpperCase() : "?";
+  const userInitials =
+    user.username && user.username !== "Loading..."
+      ? user.username.charAt(0).toUpperCase()
+      : "?";
+
+  const renderNavItem = (item: { title: string; url: string; icon: any }) => (
+    <NavLink
+      key={item.title}
+      to={item.url}
+      end={item.url === "/"}
+      data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, "-")}`}
+      className={({ isActive }) =>
+        `group relative flex items-center gap-3 h-9 px-3 rounded-md text-[13px] font-medium
+         border-l-2 transition-all duration-150
+         ${
+           isActive
+             ? "border-primary bg-primary/10 text-primary shadow-[inset_0_0_18px_rgba(59,130,246,0.08)]"
+             : "border-transparent text-muted-foreground hover:bg-white/5 hover:text-foreground"
+         }`
+      }
+    >
+      <item.icon
+        className={`h-[17px] w-[17px] shrink-0 transition-all duration-150
+          group-hover:scale-[1.05]`}
+      />
+      <span className="truncate">{item.title}</span>
+    </NavLink>
+  );
 
   return (
-    <Sidebar collapsible="icon" className="border-r border-sidebar-border shadow-xl [&::-webkit-scrollbar]:hidden">
-      
-      <SidebarHeader className="border-b border-sidebar-border p-4 relative">
-        <div className={`flex items-center gap-3 overflow-hidden ${state === "collapsed" ? "justify-center" : ""}`}>
-          <Avatar className="h-10 w-10 border-2 border-blue-500 shadow-md shrink-0">
-            <AvatarFallback className="bg-blue-600 text-white font-bold text-lg">
+    <aside
+      data-testid="app-sidebar"
+      className="h-screen w-64 flex-shrink-0 flex flex-col bg-[#0a0a0a] border-r border-border/40"
+    >
+      {/* BRAND */}
+      <div className="h-14 flex items-center px-5 border-b border-border/40 shrink-0">
+        <div className="flex items-center gap-2.5">
+          <div className="relative h-7 w-7 rounded-md bg-primary/15 border border-primary/30 flex items-center justify-center shadow-[0_0_15px_rgba(59,130,246,0.35)]">
+            <span className="text-primary text-[13px] font-bold tracking-tight">L</span>
+            <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_6px_rgba(59,130,246,0.9)]" />
+          </div>
+          <div className="flex flex-col leading-none">
+            <span className="text-sm font-semibold text-foreground tracking-tight">LearnLM</span>
+            <span className="text-[9px] font-mono uppercase tracking-[0.22em] text-muted-foreground mt-0.5">
+              Adaptive
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* NAV */}
+      <nav className="flex-1 overflow-y-auto px-3 py-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+        <p className="px-3 mb-2 text-[10px] font-medium tracking-[0.22em] text-muted-foreground/70 uppercase">
+          Workspace
+        </p>
+        <div className="space-y-0.5">{menuItems.map(renderNavItem)}</div>
+
+        <p className="px-3 mt-6 mb-2 text-[10px] font-medium tracking-[0.22em] text-muted-foreground/70 uppercase">
+          Account
+        </p>
+        <div className="space-y-0.5">{bottomMenuItems.map(renderNavItem)}</div>
+      </nav>
+
+      {/* PROFILE FOOTER */}
+      <div className="border-t border-border/40 p-3 shrink-0">
+        <div className="flex items-center gap-2.5 px-2 py-2 rounded-md hover:bg-white/5 transition-colors">
+          <Avatar className="h-8 w-8 ring-1 ring-primary/30 shadow-[0_0_10px_rgba(59,130,246,0.25)]">
+            <AvatarFallback className="bg-primary/15 text-primary font-semibold text-xs">
               {userInitials}
             </AvatarFallback>
           </Avatar>
-          {state === "expanded" && (
-            <div className="flex flex-col truncate">
-              <span className="text-xs font-bold text-blue-500 uppercase tracking-wider">Welcome</span>
-              <span className="text-lg font-black text-sidebar-foreground capitalize tracking-tight truncate">
-                {user.username}
-              </span>
-            </div>
-          )}
-        </div>
 
-        {!isMobile && (
-          <Button 
-            onClick={toggleSidebar} 
-            size="icon"
-            className={`absolute top-6 -right-3 h-7 w-7 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-md transition-transform duration-300 border-2 border-white dark:border-slate-950 z-50 ${state === "collapsed" ? "rotate-180" : ""}`}
+          <div className="flex-1 min-w-0">
+            <p
+              data-testid="sidebar-username"
+              className="text-[13px] font-medium text-foreground capitalize truncate leading-tight"
+            >
+              {user.username}
+            </p>
+            <p className="text-[10px] text-muted-foreground capitalize truncate">
+              {user.role || "Student"}
+            </p>
+          </div>
+
+          <button
+            data-testid="logout-btn"
+            onClick={handleLogout}
+            aria-label="Logout"
+            className="group h-8 w-8 rounded-md flex items-center justify-center
+              text-muted-foreground hover:text-rose-300 hover:bg-rose-500/10
+              transition-all duration-150"
           >
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-        )}
-      </SidebarHeader>
-
-      <SidebarContent className="px-2 mt-2 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-        <SidebarGroup>
-          {state === "expanded" && <SidebarGroupLabel className="text-xs font-bold tracking-widest text-slate-400 uppercase mb-2">Main Menu</SidebarGroupLabel>}
-          <SidebarGroupContent>
-            <SidebarMenu className="space-y-1">
-              {menuItems.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild tooltip={item.title} className="h-11 rounded-xl">
-                    <NavLink 
-                      to={item.url} 
-                      end={item.url === "/"}
-                      className="font-semibold tracking-wide text-[15px] text-slate-600 dark:text-slate-300 hover:bg-blue-50 hover:text-blue-700 dark:hover:bg-slate-800 dark:hover:text-blue-400 transition-all duration-200"
-                      activeClassName="bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400 shadow-sm"
-                    >
-                      <item.icon className="h-5 w-5 mr-1 shrink-0" />
-                      {state === "expanded" && <span>{item.title}</span>}
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        <SidebarGroup className="mt-auto">
-          <SidebarGroupContent>
-            <SidebarMenu className="space-y-1">
-              {bottomMenuItems.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild tooltip={item.title} className="h-11 rounded-xl">
-                    <NavLink 
-                      to={item.url}
-                      className="font-semibold tracking-wide text-[15px] text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all duration-200"
-                      activeClassName="bg-slate-200 dark:bg-slate-700 text-slate-900 shadow-sm"
-                    >
-                      <item.icon className="h-5 w-5 mr-1 shrink-0" />
-                      {state === "expanded" && <span>{item.title}</span>}
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-      </SidebarContent>
-
-      <SidebarFooter className="border-t border-sidebar-border p-4">
-        <Button
-          variant="ghost"
-          className={`w-full h-11 text-red-500 font-bold tracking-wide hover:bg-red-50 dark:hover:bg-red-950/30 hover:text-red-600 transition-colors rounded-xl ${state === "collapsed" ? "justify-center px-0" : "justify-start"}`}
-          onClick={handleLogout}
-        >
-          <LogOut className={`h-5 w-5 shrink-0 ${state === "expanded" ? "mr-2" : ""}`} />
-          {state === "expanded" && <span>Logout</span>}
-        </Button>
-      </SidebarFooter>
-    </Sidebar>
+            <LogOut className="h-4 w-4 group-hover:drop-shadow-[0_0_6px_rgba(244,63,94,0.7)] transition-all" />
+          </button>
+        </div>
+      </div>
+    </aside>
   );
 }

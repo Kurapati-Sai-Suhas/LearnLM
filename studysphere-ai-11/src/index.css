@@ -2,10 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-All colors MUST be HSL.
-*/
-
 @layer base {
   :root {
     --background: 0 0% 100%;
@@ -17,7 +13,6 @@ All colors MUST be HSL.
     --popover: 0 0% 100%;
     --popover-foreground: 222 47% 11%;
 
-    /* Professional Blue Theme */
     --primary: 217 91% 60%;
     --primary-foreground: 0 0% 100%;
     --primary-dark: 221 83% 53%;
@@ -47,7 +42,6 @@ All colors MUST be HSL.
 
     --radius: 0.5rem;
 
-    /* Sidebar Theme - Very Slightly Blue */
     --sidebar-background: 218 25% 97%;
     --sidebar-foreground: 222 47% 20%;
     --sidebar-primary: 217 91% 60%;
@@ -57,7 +51,6 @@ All colors MUST be HSL.
     --sidebar-border: 217 30% 92%;
     --sidebar-ring: 217 91% 60%;
 
-    /* Custom Design Tokens */
     --gradient-primary: linear-gradient(135deg, hsl(217 91% 60%) 0%, hsl(221 83% 53%) 100%);
     --gradient-card: linear-gradient(to bottom, hsl(0 0% 100%) 0%, hsl(210 40% 98%) 100%);
     --shadow-sm: 0 1px 2px 0 hsl(217 91% 60% / 0.05);
@@ -67,41 +60,48 @@ All colors MUST be HSL.
   }
 
   .dark {
-    --background: 222 47% 11%;
-    --foreground: 210 40% 98%;
+    /* ── True-Black Vercel/Linear Base ─────────────────────────── */
+    --background: 0 0% 0%;                 /* pure black canvas */
+    --foreground: 0 0% 98%;                /* near-white text */
 
-    --card: 217 33% 17%;
-    --card-foreground: 210 40% 98%;
+    /* Layered surfaces (lightest → darkest) for visual depth */
+    --card: 240 5% 6%;                     /* primary surface (cards) */
+    --card-foreground: 0 0% 98%;
 
-    --popover: 217 33% 17%;
-    --popover-foreground: 210 40% 98%;
+    --popover: 240 5% 8%;                  /* slightly elevated (menus, dropdowns) */
+    --popover-foreground: 0 0% 98%;
 
+    --secondary: 240 5% 10%;               /* secondary surface (chips, alt buttons) */
+    --secondary-foreground: 0 0% 98%;
+
+    --muted: 240 5% 15%;                   /* muted surface (skeletons, fills) */
+    --muted-foreground: 240 5% 65%;        /* muted text — readable on dark zinc */
+
+    /* ── Primary (UNTOUCHED — glowing blue) ────────────────────── */
     --primary: 217 91% 60%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 217 33% 17%;
-    --secondary-foreground: 210 40% 98%;
-
-    --muted: 217 33% 17%;
-    --muted-foreground: 215 20% 65%;
-
+    /* Accent mirrors primary for consistency */
     --accent: 217 91% 60%;
     --accent-foreground: 0 0% 100%;
 
-    --destructive: 0 63% 31%;
-    --destructive-foreground: 210 40% 98%;
+    /* ── Destructive ──────────────────────────────────────────── */
+    --destructive: 0 72% 45%;
+    --destructive-foreground: 0 0% 98%;
 
-    --border: 217 33% 17%;
-    --input: 217 33% 17%;
-    --ring: 217 91% 60%;
+    /* ── Strokes & inputs ─────────────────────────────────────── */
+    --border: 240 6% 15%;                  /* subtle dark gray hairlines */
+    --input: 240 6% 15%;
+    --ring: 217 91% 60%;                   /* focus ring — UNTOUCHED */
 
-    --sidebar-background: 222 47% 11%;
-    --sidebar-foreground: 210 40% 98%;
+    /* ── Sidebar tokens (kept in sync; sidebar uses #0a0a0a directly) */
+    --sidebar-background: 0 0% 4%;
+    --sidebar-foreground: 0 0% 98%;
     --sidebar-primary: 217 91% 60%;
     --sidebar-primary-foreground: 0 0% 100%;
     --sidebar-accent: 217 91% 60%;
     --sidebar-accent-foreground: 0 0% 100%;
-    --sidebar-border: 215 25% 27%;
+    --sidebar-border: 240 6% 15%;
     --sidebar-ring: 217 91% 60%;
   }
 }
