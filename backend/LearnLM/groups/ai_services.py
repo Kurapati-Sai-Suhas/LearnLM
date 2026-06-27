@@ -5,12 +5,16 @@ import numpy as np
 from django.conf import settings
 from PIL import Image as PILImage
 import google.generativeai as genai
+from groq import Groq
 from transformers import CLIPProcessor, CLIPModel
 import torch
 
-# Configure the SDK 
+# Configure the SDKs
 genai.configure(api_key=settings.GEMINI_API_KEY)
-
+try:
+    groq_client = Groq(api_key=settings.GROQ_API_KEY)
+except:
+    groq_client = None
 
 class AIService:
 
@@ -36,12 +40,14 @@ class AIService:
         """
 
         try:
-            model = AIService.get_model()
-            response = model.generate_content(
-                prompt,
-                generation_config={"response_mime_type": "application/json"}
+            if not groq_client:
+                raise Exception("Groq API key missing")
+            response = groq_client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"}
             )
-            return json.loads(response.text)
+            return json.loads(response.choices[0].message.content)
 
         except Exception as e:
             print(f"❌ Quiz AI Error: {e}")
@@ -60,12 +66,14 @@ class AIService:
         TEXT: {text[:10000]}
         """
         try:
-            model = AIService.get_model()
-            response = model.generate_content(
-                prompt,
-                generation_config={"response_mime_type": "application/json"}
+            if not groq_client:
+                raise Exception("Groq API key missing")
+            response = groq_client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"}
             )
-            return json.loads(response.text)
+            return json.loads(response.choices[0].message.content)
         except Exception as e:
             print(f"❌ Flashcard AI Error: {e}")
             return []
@@ -95,9 +103,13 @@ class AIService:
         """
 
         try:
-            model = AIService.get_model()
-            response = model.generate_content(prompt)
-            return response.text
+            if not groq_client:
+                raise Exception("Groq API key missing")
+            response = groq_client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[{"role": "user", "content": prompt}]
+            )
+            return response.choices[0].message.content
         except Exception as e:
             print(f"❌ AI Answer Error: {e}")
             return "Sorry, I ran into an error trying to answer that."
@@ -170,41 +182,23 @@ class VectorSearchService:
         vector = image_features.squeeze().tolist()  # Shape: (512,)
         return vector
 
-    @staticmethod
-    def cosine_similarity(vec_a: list, vec_b: list) -> float:
-        """Pure numpy cosine similarity between two vectors."""
-        a = np.array(vec_a)
-        b = np.array(vec_b)
-        dot = np.dot(a, b)
-        norm = np.linalg.norm(a) * np.linalg.norm(b)
-        if norm == 0:
-            return 0.0
-        return float(dot / norm)
-
     @classmethod
     def find_similar(cls, query_vector: list, documents, top_k=5) -> list:
-        """
-        Compares query_vector against all Document objects.
-        """
+        from pgvector.django import L2Distance
+        
+        # 'documents' is a QuerySet. We let PostgreSQL do the nearest neighbor search instantly.
+        qs = documents.exclude(feature_vector__isnull=True).annotate(
+            distance=L2Distance('feature_vector', query_vector)
+        ).order_by('distance')[:top_k]
+        
+        # Return tuple (score, doc) where score is inverted distance (so higher is better)
         results = []
-        for doc in documents:
-            if not doc.feature_vector:
-                continue
-            try:
-                stored_vec = json.loads(doc.feature_vector)
-                
-                # Safety check: Prevent crashing if comparing old MobileNet (1280) to new CLIP (512) vectors
-                if len(stored_vec) != len(query_vector):
-                    continue
-                    
-                score = cls.cosine_similarity(query_vector, stored_vec)
-                results.append((score, doc))
-            except (json.JSONDecodeError, Exception):
-                continue
-
-        # Sort by similarity score descending
-        results.sort(key=lambda x: x[0], reverse=True)
-        return results[:top_k]
+        for doc in qs:
+            # L2 distance is smaller for closer vectors.
+            score = 1.0 / (1.0 + getattr(doc, 'distance', 0))
+            results.append((score, doc))
+            
+        return results
 
 
 class RAGService:
@@ -243,11 +237,30 @@ STUDENT QUESTION: {question}
 Provide a clear, well-structured answer using markdown formatting and bullet points."""
 
         try:
-            model = AIService.get_model()
-            response = model.generate_content(prompt)
-            return response.text
+            if not groq_client:
+                raise Exception("Groq API key missing")
+            response = groq_client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[{"role": "user", "content": prompt}]
+            )
+            return response.choices[0].message.content
         except Exception as e:
             return f"Error generating answer: {e}"
+
+def get_gemini_embedding(text: str) -> list:
+    """
+    Calls text-embedding-004 to get a 768-dimensional embedding for a subject.
+    """
+    try:
+        result = genai.embed_content(
+            model="models/text-embedding-004",
+            content=text,
+            task_type="retrieval_document"
+        )
+        return result['embedding']
+    except Exception:
+        # Fallback dummy embedding if API fails
+        return [0.0] * 768
 
 
 # --- NEW: Standalone AI Test Case Generator for Coding Portal ---
@@ -273,14 +286,18 @@ def generate_test_cases(title, description):
     """
     
     try:
-        model = AIService.get_model()
-        response = model.generate_content(prompt)
+        if not groq_client:
+            raise Exception("Groq API key missing")
+        response = groq_client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}]
+        )
         
-        # Clean up any potential markdown backticks Gemini tries to sneak in
-        clean_text = response.text.replace('```json', '').replace('```', '').strip()
+        # Clean up any potential markdown backticks
+        clean_text = response.choices[0].message.content.replace('```json', '').replace('```', '').strip()
         
         return json.loads(clean_text)
     except Exception as e:
-        print(f"❌ Gemini Test Case Generation Failed: {e}")
+        print(f"❌ AI Test Case Generation Failed: {e}")
         # Fallback safety array so the app doesn't crash
         return [{"stdin": "1", "expected_output": "1"}]

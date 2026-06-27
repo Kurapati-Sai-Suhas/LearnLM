@@ -8,4 +8,7 @@ websocket_urlpatterns = [
 
     # Personal notifications: ws://host/ws/notifications/
     re_path(r"^ws/notifications/$", consumers.NotificationConsumer.as_asgi()),
+
+    # Code collaboration (CRDT): ws://host/ws/code/42/
+    re_path(r"^ws/code/(?P<group_id>\d+)/$", consumers.CodeCollabConsumer.as_asgi()),
 ]

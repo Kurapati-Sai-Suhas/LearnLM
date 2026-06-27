@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { groupsAPI, userAPI } from "@/services/api";
 import api from "@/services/api";
@@ -23,14 +23,10 @@ import { Progress } from "@/components/ui/progress";
 import "katex/dist/katex.min.css";
 import Latex from "react-latex-next";
 import GroupChat from "@/components/GroupChat";
-import CodingOnboardingModal from "@/components/CodingOnboardingModal";
-
 export default function GroupDetail() {
   const params = useParams();
   const id = params.id || params.groupId;
   const navigate = useNavigate();
-
-  const [showOnboarding, setShowOnboarding] = useState(false);
 
   const [group, setGroup] = useState<any>(null);
   const [files, setFiles] = useState<any[]>([]);
@@ -55,6 +51,34 @@ export default function GroupDetail() {
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [isAnswerChecked, setIsAnswerChecked] = useState(false);
 
+  const fetchFiles = useCallback(async () => {
+    if (!id) return;
+    try {
+      const res = await groupsAPI.getMaterials(id);
+      setFiles(res.data.results || res.data || []);
+    } catch (e) { console.error("File fetch error", e); }
+  }, [id]);
+
+  const fetchAssignments = useCallback(async () => {
+    if (!id) return;
+    try {
+      const res = await api.get(`/quizzes/assigned/?study_group=${id}`);
+      setAssignedQuizzes(res.data.results || res.data || []);
+    } catch (error) { console.error("Failed to fetch group assignments", error); }
+  }, [id]);
+
+  const fetchMembers = useCallback(async () => {
+    if (!id) return;
+    setMembersLoading(true);
+    try {
+      const res = await api.get(`/groups/${id}/members/`);
+      setMembersList(res.data.results || res.data || []);
+    } catch (error) {
+      console.error("Failed to fetch members", error);
+      setMembersList([]);
+    } finally { setMembersLoading(false); }
+  }, [id]);
+
   useEffect(() => {
     const fetchData = async () => {
       if (!id) return;
@@ -73,35 +97,7 @@ export default function GroupDetail() {
       }
     };
     fetchData();
-  }, [id]);
-
-  const fetchFiles = async () => {
-    if (!id) return;
-    try {
-      const res = await groupsAPI.getMaterials(id);
-      setFiles(res.data.results || res.data || []);
-    } catch (e) { console.error("File fetch error", e); }
-  };
-
-  const fetchAssignments = async () => {
-    if (!id) return;
-    try {
-      const res = await api.get(`/quizzes/assigned/?study_group=${id}`);
-      setAssignedQuizzes(res.data.results || res.data || []);
-    } catch (error) { console.error("Failed to fetch group assignments", error); }
-  };
-
-  const fetchMembers = async () => {
-    if (!id) return;
-    setMembersLoading(true);
-    try {
-      const res = await api.get(`/groups/${id}/members/`);
-      setMembersList(res.data.results || res.data || []);
-    } catch (error) {
-      console.error("Failed to fetch members", error);
-      setMembersList([]);
-    } finally { setMembersLoading(false); }
-  };
+  }, [id, fetchFiles, fetchAssignments, fetchMembers]);
 
   const handleUpload = async () => {
     if (!fileToUpload || !id || !fileTitle) { alert("Please select a file and enter a title!"); return; }
@@ -269,38 +265,7 @@ export default function GroupDetail() {
         </div>
       </div>
 
-      {/* PORTAL ENTRY */}
-      <Card data-testid="portal-entry-card" className={glassCard}>
-        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary to-transparent" />
-        <div className="absolute -top-24 right-10 h-48 w-48 rounded-full bg-primary/25 blur-3xl" />
-        <CardContent className="relative flex flex-col md:flex-row items-start md:items-center justify-between gap-4 p-6">
-          <div className="flex items-start gap-4">
-            <div className="h-12 w-12 rounded-xl border border-border/60 bg-background/40 backdrop-blur flex items-center justify-center shadow-[0_0_20px_rgba(59,130,246,0.35)]">
-              <Cpu className="h-6 w-6 text-primary" />
-            </div>
-            <div>
-              <div className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-background/40 backdrop-blur px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.18em] text-primary mb-2">
-                 AI Powered
-              </div>
-              <CardTitle className="text-xl font-semibold text-foreground">Adaptive Coding Portal</CardTitle>
-              <p className="text-sm text-muted-foreground mt-1">
-                Master {group.primary_topic || "DSA"} with AI-driven learning paths.
-              </p>
-            </div>
-          </div>
-          <Button data-testid="enter-portal-btn" onClick={() => setShowOnboarding(true)} className={`h-11 px-6 ${primaryGlowBtn} group`}>
-            Enter Portal <ArrowRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />
-          </Button>
-        </CardContent>
-      </Card>
 
-      {showOnboarding && (
-        <CodingOnboardingModal
-          groupId={id!}
-          groupTopic={group.primary_topic || "Array"}
-          onClose={() => setShowOnboarding(false)}
-        />
-      )}
 
       {/* Group Info */}
       <Card data-testid="group-info-card" className={glassCard}>

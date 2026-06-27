@@ -26,7 +26,13 @@ from .views import (
     process_document,
 )
 
-from .coding_views import CodeRunView, CodeSubmitView, CodingOnboardingView, CodingProfileView, NextProblemView, CodingPortalListView
+from .settings_views import ProfileSettingsView, TestEmailView
+from .schedule_views import ScheduleView
+from .notification_views import NotificationView
+from .messages_views import DirectMessageFriendsView, DirectMessageView
+from .coding_views import CodeRunView, CodeSubmitView, CodingOnboardingView, CodingProfileView, NextProblemView, CodingPortalListView, GamificationDashboardView
+from .mlops_views import MLOpsTelemetryView
+from . import views
 
 # ── ViewSet router ───────────────────────────────────────────
 router = DefaultRouter()
@@ -62,12 +68,14 @@ urlpatterns = [
     # ── Module C: Coding Portal (V2) ─────────────────────────
     # 👇 NEW: Fetch Global Portals
     path('coding-portals/', CodingPortalListView.as_view(), name='coding-portals-list'),
+    path('coding-portals/gamification/', GamificationDashboardView.as_view(), name='gamification-dashboard'),
     
     path('code/run/',       CodeRunView.as_view(),        name='code-run'),
     path('code/submit/',    CodeSubmitView.as_view(),      name='code-submit'),
     path('code/profile/',   CodingProfileView.as_view(),   name='code-profile'),
-    path('code/next/',      NextProblemView.as_view(),     name='code-next'),
+    path('code/next/',      NextProblemView.as_view(),     name='code-next-problem'),
     path('code/onboard/',   CodingOnboardingView.as_view(), name='code-onboard'),
+    path('mlops/telemetry/', MLOpsTelemetryView.as_view(), name='mlops-telemetry'),
 
     # ── Module B: Visual Search ──────────────────────────────
     path('visual-search/upload/', VisualSearchUploadView.as_view(), name='visual-search-upload'),
@@ -88,4 +96,15 @@ urlpatterns = [
 
     # ── Legacy ──────────────────────────────────────────────
     path('upload-pdf/', process_document, name='process_document'),
+    path("user/activity/", views.update_user_activity, name="update_user_activity"),
+
+    # Day 4: UI Polish Endpoints
+    path("settings/profile/", ProfileSettingsView.as_view(), name="settings_profile"),
+    path("settings/email/", TestEmailView.as_view(), name="settings_email"),
+    path("schedule/", ScheduleView.as_view(), name="schedule"),
+    path("notifications/", NotificationView.as_view(), name="notifications"),
+    
+    # Day 5: Direct Messaging
+    path("messages/friends/", DirectMessageFriendsView.as_view(), name="messages_friends"),
+    path("messages/<int:friend_id>/", DirectMessageView.as_view(), name="messages"),
 ]

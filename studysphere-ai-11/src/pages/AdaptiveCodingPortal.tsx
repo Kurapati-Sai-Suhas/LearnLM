@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import Editor from '@monaco-editor/react';
 import {
@@ -23,9 +23,11 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import 'katex/dist/katex.min.css';
 import XaiComponentCharts from '../components/XaiComponentCharts';
+import LearningPathVisualizer from '../components/LearningPathVisualizer';
+import LanguageSelector from '../components/LanguageSelector';
 
 export default function AdaptiveCodingPortal() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
 
   const topic = searchParams.get('topic') || 'Array';
@@ -37,8 +39,9 @@ export default function AdaptiveCodingPortal() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [results, setResults] = useState<any>(null);
+  const [showLearningPath, setShowLearningPath] = useState(false);
 
-  const fetchNextProblem = async () => {
+  const fetchNextProblem = useCallback(async () => {
     setLoading(true);
     setResults(null);
     const token = localStorage.getItem('authToken') || localStorage.getItem('access');
@@ -60,11 +63,11 @@ export default function AdaptiveCodingPortal() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [topic, language]);
 
   useEffect(() => {
     fetchNextProblem();
-  }, [topic]);
+  }, [fetchNextProblem]);
 
   useEffect(() => {
     if (problem && problem.boilerplate_code && problem.boilerplate_code[language]) {
@@ -136,6 +139,25 @@ export default function AdaptiveCodingPortal() {
       ? 'border-amber-500/30 bg-amber-500/10 text-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.25)]'
       : 'border-rose-500/30 bg-rose-500/10 text-rose-300 shadow-[0_0_15px_rgba(244,63,94,0.25)]';
 
+  const handleStartTopic = (newTopic: string) => {
+    searchParams.set('topic', newTopic);
+    setSearchParams(searchParams);
+    setShowLearningPath(false);
+  };
+
+  if (showLearningPath) {
+    return (
+      <div className="relative z-50 bg-background min-h-screen">
+        <div className="fixed bottom-8 right-8 z-[100]">
+          <Button variant="default" size="lg" className="shadow-[0_0_20px_rgba(59,130,246,0.4)] rounded-full px-6" onClick={() => setShowLearningPath(false)}>
+            <ArrowLeft className="h-4 w-4 mr-2" /> Back to Editor
+          </Button>
+        </div>
+        <LearningPathVisualizer onStartTopic={handleStartTopic} />
+      </div>
+    );
+  }
+
   return (
     <div
       data-testid="coding-portal"
@@ -160,7 +182,7 @@ export default function AdaptiveCodingPortal() {
               variant="ghost"
               size="sm"
               className="h-8 text-muted-foreground hover:text-foreground hover:bg-muted/40"
-              onClick={() => navigate(`/groups/${groupId}`)}
+              onClick={() => navigate(groupId ? `/groups/${groupId}` : '/coding-hub')}
             >
               <ArrowLeft className="h-4 w-4 mr-1.5" /> Exit
             </Button>
@@ -170,12 +192,23 @@ export default function AdaptiveCodingPortal() {
               Adaptive Portal
             </h1>
           </div>
-          <Badge
-            data-testid="topic-badge"
-            className="bg-primary/10 text-primary border border-primary/30 font-medium px-3 py-0.5"
-          >
-            {topic}
-          </Badge>
+          <div className="flex items-center gap-4">
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-primary/40 text-primary bg-primary/5 hover:bg-primary/20 hover:text-primary h-7 shadow-[0_0_10px_rgba(59,130,246,0.15)]"
+              onClick={() => setShowLearningPath(true)}
+            >
+              <Target className="h-3.5 w-3.5 mr-1.5" />
+              View Learning Path
+            </Button>
+            <Badge
+              data-testid="topic-badge"
+              className="bg-primary/10 text-primary border border-primary/30 font-medium px-3 py-0.5"
+            >
+              {topic}
+            </Badge>
+          </div>
         </div>
 
         <div className="px-6 py-6 space-y-6">
@@ -333,23 +366,8 @@ export default function AdaptiveCodingPortal() {
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Sleek language select */}
-            <div className="relative">
-              <select
-                data-testid="language-select"
-                value={language}
-                onChange={(e) => setLanguage(e.target.value)}
-                className="appearance-none h-8 pl-3 pr-8 text-xs font-mono uppercase tracking-wider rounded-md
-                  bg-card/40 backdrop-blur border border-border/60 text-foreground
-                  hover:border-primary/40 focus:outline-none focus:border-primary/60
-                  focus:shadow-[0_0_0_1px_rgba(59,130,246,0.4)] transition-all cursor-pointer"
-              >
-                <option value="python">Python</option>
-                <option value="java">Java</option>
-                <option value="cpp">C++</option>
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            </div>
+            {/* Sleek Language Selector */}
+            <LanguageSelector value={language} onChange={setLanguage} />
 
             <Button
               data-testid="submit-code-btn"
@@ -470,6 +488,19 @@ export default function AdaptiveCodingPortal() {
                     }}
                   />
                 </div>
+
+                {results.agentic_hint && (
+                  <div className="mt-4 relative overflow-hidden rounded-lg border border-indigo-500/30 bg-indigo-500/10 p-4 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04),0_0_20px_rgba(99,102,241,0.05)]">
+                    <div className="absolute -top-12 -right-12 h-24 w-24 rounded-full bg-indigo-500/20 blur-2xl" />
+                    <div className="flex items-center gap-2 mb-2">
+                      <Brain className="h-4 w-4 text-indigo-400 animate-pulse" />
+                      <h4 className="text-sm font-semibold uppercase tracking-wider text-indigo-300">Agentic Coach Hint</h4>
+                    </div>
+                    <p className="text-sm text-indigo-200/90 leading-relaxed font-sans whitespace-pre-wrap">
+                      {results.agentic_hint}
+                    </p>
+                  </div>
+                )}
 
                 {results.all_passed && (
                   <Button

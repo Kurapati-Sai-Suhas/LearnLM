@@ -230,3 +230,56 @@ class NotificationConsumer(AsyncWebsocketConsumer):
             "message": event["message"],
             "category": event.get("category", "info"),
         }))
+
+class CodeCollabConsumer(AsyncWebsocketConsumer):
+    """
+    WebSocket consumer for Real-Time Collaborative Coding (CRDT-ready).
+    URL pattern: ws://host/ws/code/<group_id>/
+    """
+    async def connect(self):
+        self.group_id = self.scope['url_route']['kwargs']['group_id']
+        self.room_group_name = f"code_collab_{self.group_id}"
+        self.user = self.scope["user"]
+
+        if not self.user or not self.user.is_authenticated:
+            await self.close(code=4001)
+            return
+
+        await self.channel_layer.group_add(
+            self.room_group_name,
+            self.channel_name
+        )
+        await self.accept()
+
+    async def disconnect(self, close_code):
+        if hasattr(self, 'room_group_name'):
+            await self.channel_layer.group_discard(
+                self.room_group_name,
+                self.channel_name
+            )
+
+    async def receive(self, text_data):
+        """
+        Receives Yjs or generic sync payloads and broadcasts to all other clients.
+        """
+        try:
+            data = json.loads(text_data)
+        except json.JSONDecodeError:
+            return
+
+        # Broadcast the CRDT update payload to everyone else in the room
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                "type": "code_sync",
+                "sender_id": self.user.id,
+                "payload": data
+            }
+        )
+
+    async def code_sync(self, event):
+        """
+        Sends the synced code to the client (ignoring the sender to prevent echo loops).
+        """
+        if event["sender_id"] != self.user.id:
+            await self.send(text_data=json.dumps(event["payload"]))

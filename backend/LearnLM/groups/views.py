@@ -324,7 +324,7 @@ class VisualSearchUploadView(APIView):
             title=title,
             file=image_file,
             file_type='image',
-            feature_vector=json.dumps(vector),
+            feature_vector=vector,
         )
         return Response({
             "message":          "Image uploaded and indexed successfully!",
@@ -645,6 +645,15 @@ class FriendRequestActionView(APIView):
             return Response({"message": "Friend request rejected."})
         return Response({"error": "Invalid action."}, status=400)
 
+    def delete(self, request, connection_id):
+        try:
+            connection = Connection.objects.get(id=connection_id)
+            if request.user not in [connection.sender, connection.receiver]:
+                return Response({"error": "Unauthorized"}, status=403)
+            connection.delete()
+            return Response({"message": "Friend removed."})
+        except Connection.DoesNotExist:
+            return Response({"error": "Request not found."}, status=404)
 
 class FriendsListView(APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -682,3 +691,9 @@ def process_document(request):
         })
     except Exception as e:
         return Response({"status": "error", "message": str(e)}, status=500)
+
+@api_view(['POST', 'GET'])
+@permission_classes([IsAuthenticated])
+def update_user_activity(request):
+    """Stub endpoint for user activity tracking"""
+    return Response({"status": "success"})

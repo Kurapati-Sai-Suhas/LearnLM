@@ -72,9 +72,21 @@ export default function AIQuiz() {
     setLoading(true);
     try {
       const res = await aiAPI.generateQuiz(selectedMaterialId, topic || "General", 5, "Medium");
-      const generatedQuiz = res.data.quiz || res.data || [];
+      let generatedQuiz = res.data.quiz || res.data || [];
       
-      if (generatedQuiz.length === 0) {
+      // Handle case where LLM wrapped the array in an object (e.g. {"quiz": [...]})
+      if (generatedQuiz && !Array.isArray(generatedQuiz)) {
+          if (generatedQuiz.quiz && Array.isArray(generatedQuiz.quiz)) {
+              generatedQuiz = generatedQuiz.quiz;
+          } else if (generatedQuiz.questions && Array.isArray(generatedQuiz.questions)) {
+              generatedQuiz = generatedQuiz.questions;
+          } else {
+              const firstArray = Object.values(generatedQuiz).find(v => Array.isArray(v));
+              generatedQuiz = firstArray || [];
+          }
+      }
+      
+      if (!Array.isArray(generatedQuiz) || generatedQuiz.length === 0) {
         alert("AI could not generate questions. Try a different file.");
         setLoading(false);
         return;
@@ -107,9 +119,7 @@ const handleAssignQuizToGroup = async () => {
       try {
           await api.post('/quizzes/assign/', {
               study_group: selectedGroup.id,
-              // 👇 THE FIX: Only sending 'name' and 'description' to perfectly match Django!
-              name: `${topic || "General"} Assignment`,
-              description: `Please complete this AI-generated assignment on ${topic || "General"}.`,
+              topic: `${topic || "General"} Assignment`,
               quiz_data: editableQuiz,
               deadline: deadline
           });

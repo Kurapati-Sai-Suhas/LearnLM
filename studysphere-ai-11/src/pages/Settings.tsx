@@ -27,8 +27,59 @@ import {
   
 } from "lucide-react";
 import { toast } from "sonner";
+import { useState, useEffect } from "react";
 
 export default function Settings() {
+  const [profile, setProfile] = useState({ first_name: "", last_name: "", email: "", bio: "", email_alerts: true });
+
+  useEffect(() => {
+    fetch("/api/settings/profile/", {
+      headers: { Authorization: `Bearer ${localStorage.getItem("access_token")}` }
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.email !== undefined) setProfile(data);
+    })
+    .catch(console.error);
+  }, []);
+
+  const handleSaveProfile = async () => {
+    try {
+      await fetch("/api/settings/profile/", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("access_token")}`,
+        },
+        body: JSON.stringify(profile),
+      });
+      toast.success("Profile saved");
+    } catch (e) {
+      toast.error("Failed to save profile");
+    }
+  };
+
+  const handleToggleEmail = async (checked: boolean) => {
+    setProfile({ ...profile, email_alerts: checked });
+    if (checked) {
+      toast("Sending test email to verify connection...");
+      fetch("/api/settings/email/", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("access_token")}`,
+        }
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.status === "Email sent successfully!") {
+            toast.success(data.status);
+        } else {
+            toast.error(data.message || "Failed to send email. Check SMTP settings.");
+        }
+      });
+    }
+  };
+
   // Shared premium tokens (kept inside the component to avoid extra files)
   const glassCard =
     "relative overflow-hidden border-border/60 bg-card/40 backdrop-blur-md " +
@@ -145,6 +196,8 @@ export default function Settings() {
                   <Input
                     data-testid="profile-first-name"
                     placeholder="Your Name"
+                    value={profile.first_name}
+                    onChange={(e) => setProfile({ ...profile, first_name: e.target.value })}
                     className={sleekInput}
                   />
                 </div>
@@ -153,6 +206,8 @@ export default function Settings() {
                   <Input
                     data-testid="profile-last-name"
                     placeholder="Your Last Name"
+                    value={profile.last_name}
+                    onChange={(e) => setProfile({ ...profile, last_name: e.target.value })}
                     className={sleekInput}
                   />
                 </div>
@@ -163,6 +218,8 @@ export default function Settings() {
                   data-testid="profile-email"
                   type="email"
                   placeholder="email@example.com"
+                  value={profile.email}
+                  onChange={(e) => setProfile({ ...profile, email: e.target.value })}
                   className={sleekInput}
                 />
               </div>
@@ -171,12 +228,14 @@ export default function Settings() {
                 <Input
                   data-testid="profile-bio"
                   placeholder="Tell us about yourself..."
+                  value={profile.bio}
+                  onChange={(e) => setProfile({ ...profile, bio: e.target.value })}
                   className={sleekInput}
                 />
               </div>
               <Button
                 data-testid="profile-save-btn"
-                onClick={() => toast.success("Profile saved")}
+                onClick={handleSaveProfile}
                 className={primaryGlowBtn}
               >
                 <Save className="h-4 w-4 mr-2" />
@@ -199,7 +258,7 @@ export default function Settings() {
                 Notifications
               </CardTitle>
               <CardDescription className="text-sm text-muted-foreground">
-                Manage alerts
+                Configure your email and push notification preferences.
               </CardDescription>
             </CardHeader>
             <CardContent className="pt-6 space-y-4">
@@ -219,7 +278,8 @@ export default function Settings() {
                 </div>
                 <Switch
                   data-testid="switch-email-alerts"
-                  defaultChecked
+                  checked={profile.email_alerts}
+                  onCheckedChange={handleToggleEmail}
                   className="data-[state=checked]:bg-primary data-[state=checked]:shadow-[0_0_10px_rgba(59,130,246,0.5)]"
                 />
               </div>
@@ -247,7 +307,7 @@ export default function Settings() {
 
               <Button
                 data-testid="notifications-save-btn"
-                onClick={() => toast.success("Preferences saved")}
+                onClick={handleSaveProfile}
                 className={`w-full ${primaryGlowBtn}`}
               >
                 <Save className="h-4 w-4 mr-2" />

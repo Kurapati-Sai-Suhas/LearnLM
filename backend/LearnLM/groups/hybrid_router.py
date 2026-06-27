@@ -1,6 +1,11 @@
-# groups/hybrid_router.py
 import math
 import networkx as nx
+import joblib
+import numpy as np
+import torch
+import torch.nn as nn
+from django.utils import timezone
+import os
 
 # ─────────────────────────────────────────────────────────────
 # PREREQUISITE GRAPHS — one per subject
@@ -53,7 +58,6 @@ CN_GRAPH.add_edges_from([
     ("HTTP",          "TLS"),
 ])
 
-# Map subject keywords → graph
 SUBJECT_GRAPHS = {
     "data structures": DSA_GRAPH,
     "algorithms":      DSA_GRAPH,
@@ -68,9 +72,135 @@ HIERARCHICAL_SUBJECTS = set(SUBJECT_GRAPHS.keys()) | {
     "database", "compiler design", "mathematics", "discrete math"
 }
 
+# ─────────────────────────────────────────────────────────────
+# META CLASSIFIER (TRAFFIC COP)
+# ─────────────────────────────────────────────────────────────
+class RoutingClassifier:
+    def __init__(self):
+        try:
+            # Try loading the trained scikit-learn LogisticRegression model
+            self.clf = joblib.load(os.path.join(os.path.dirname(__file__), "..", "..", "models_data", "routing_classifier.pkl"))
+        except Exception:
+            self.clf = None
+
+    def predict_route(self, avg_acc, var_acc, avg_elo, subject=None):
+        if self.clf:
+            features = [avg_acc, var_acc, avg_elo]
+            if self.clf.n_features_in_ > 3:
+                if subject:
+                    from .ai_services import get_gemini_embedding
+                    emb = get_gemini_embedding(subject)
+                    features.extend(emb)
+                else:
+                    features.extend([0.0] * 768)
+            
+            route = self.clf.predict([features])[0]
+            return "hierarchical" if route == 1 else "flat"
+        
+        # Fallback heuristic if model is missing
+        if var_acc > 0.15 or avg_acc < 0.5:
+            return "flat"
+        return "hierarchical"
+
+# ─────────────────────────────────────────────────────────────
+# DEEP KNOWLEDGE TRACING (DKT) - LSTM
+# ─────────────────────────────────────────────────────────────
+class SequentialKnowledgeTracer(nn.Module):
+    def __init__(self, input_dim=3, hidden_dim=16, num_layers=1):
+        super().__init__()
+        self.lstm = nn.LSTM(input_dim, hidden_dim, num_layers, batch_first=True)
+        self.fc = nn.Linear(hidden_dim, 1)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        # x: [batch, sequence_length, features] (e.g. [difficulty, is_correct, time_spent])
+        out, _ = self.lstm(x)
+        out = self.fc(out[:, -1, :]) # Take last step
+        return self.sigmoid(out)
+
+# ─────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────
+# 3-PARAMETER ITEM RESPONSE THEORY (IRT) ENGINE
+# ─────────────────────────────────────────────────────────────
+class IRTEngine:
+    @staticmethod
+    def expected_score(theta, a, b, c):
+        """
+        theta: user latent ability
+        a: discrimination parameter (how well it separates students)
+        b: difficulty parameter
+        c: guessing parameter (probability of getting it right by chance)
+        """
+        # Prevent math overflow
+        exponent = min(709.0, max(-709.0, -a * (theta - b)))
+        return c + (1 - c) / (1 + math.exp(exponent))
+
+# ─────────────────────────────────────────────────────────────
+# GRAPH-DECAY CROSS-POLLINATION (GDCP) ENGINE (Approximate Traverse)
+# ─────────────────────────────────────────────────────────────
+class GDCPEngine:
+    @staticmethod
+    def propagate_decay(graph, start_node, base_decay):
+        """
+        Manually traverse downstream nodes and mathematically apply decay penalty
+        if the student has forgotten the root node (e.g. forgotten Arrays -> penalize LinkedLists).
+        This approximates what the GCNConv does inside PyTorch.
+        """
+        penalties = {}
+        for desc in nx.descendants(graph, start_node):
+            dist = nx.shortest_path_length(graph, start_node, desc)
+            penalty = base_decay * (0.5 ** dist) # Halves each step down
+            penalties[desc] = penalty
+        return penalties
+
+# ─────────────────────────────────────────────────────────────
+# ELO ENGINE
+# ─────────────────────────────────────────────────────────────
+class EloEngine:
+    K = 32
+
+    @staticmethod
+    def expected_score(player_rating: float, question_difficulty: float) -> float:
+        return 1 / (1 + math.pow(10, (question_difficulty - player_rating) / 400))
+
+    @classmethod
+    def update_rating(cls, player_rating: float, question_difficulty: float, got_correct: bool) -> dict:
+        expected   = cls.expected_score(player_rating, question_difficulty)
+        actual     = 1.0 if got_correct else 0.0
+        delta      = cls.K * (actual - expected)
+        new_rating = round(player_rating + delta, 2)
+
+        if delta > 20:    msg = "Excellent! Well above expectations. 🔥"
+        elif delta > 5:   msg = "Good job! Improving. ✅"
+        elif delta > -5:  msg = "Expected performance. Keep going. 📈"
+        elif delta > -20: msg = "Tougher than expected. Review this topic. 📚"
+        else:             msg = "Needs work. Revisit the basics. 💪"
+
+        return {
+            "old_rating":           player_rating,
+            "new_rating":           new_rating,
+            "delta":                round(delta, 2),
+            "expected_probability": round(expected, 3),
+            "result":               "correct" if got_correct else "incorrect",
+            "performance_message":  msg,
+        }
+
+    @classmethod
+    def pick_next_difficulty(cls, player_rating: float) -> dict:
+        target = player_rating + 50
+        if target < 1000:   band = "beginner"
+        elif target < 1200: band = "easy"
+        elif target < 1400: band = "medium"
+        elif target < 1600: band = "hard"
+        else:               band = "expert"
+        return {
+            "target_difficulty": round(target),
+            "difficulty_band":   band,
+            "player_rating":     player_rating,
+            "tip":               f"Next question should be rated ~{round(target)} ({band}).",
+        }
 
 class HierarchicalEngine:
-
     @staticmethod
     def _get_graph(subject: str) -> nx.DiGraph:
         s = subject.lower().strip()
@@ -139,65 +269,24 @@ class HierarchicalEngine:
             }
         return result
 
-
 # ─────────────────────────────────────────────────────────────
-# ELO ENGINE
+# BACKWARDS COMPATIBILITY FOR LEGACY VIEWS
 # ─────────────────────────────────────────────────────────────
-
-class EloEngine:
-    K = 32
-
-    @staticmethod
-    def expected_score(player_rating: float, question_difficulty: float) -> float:
-        return 1 / (1 + math.pow(10, (question_difficulty - player_rating) / 400))
-
-    @classmethod
-    def update_rating(cls, player_rating: float, question_difficulty: float, got_correct: bool) -> dict:
-        expected   = cls.expected_score(player_rating, question_difficulty)
-        actual     = 1.0 if got_correct else 0.0
-        delta      = cls.K * (actual - expected)
-        new_rating = round(player_rating + delta, 2)
-
-        if delta > 20:    msg = "Excellent! Well above expectations. 🔥"
-        elif delta > 5:   msg = "Good job! Improving. ✅"
-        elif delta > -5:  msg = "Expected performance. Keep going. 📈"
-        elif delta > -20: msg = "Tougher than expected. Review this topic. 📚"
-        else:             msg = "Needs work. Revisit the basics. 💪"
-
-        return {
-            "old_rating":           player_rating,
-            "new_rating":           new_rating,
-            "delta":                round(delta, 2),
-            "expected_probability": round(expected, 3),
-            "result":               "correct" if got_correct else "incorrect",
-            "performance_message":  msg,
-        }
-
-    @classmethod
-    def pick_next_difficulty(cls, player_rating: float) -> dict:
-        target = player_rating + 50
-        if target < 1000:   band = "beginner"
-        elif target < 1200: band = "easy"
-        elif target < 1400: band = "medium"
-        elif target < 1600: band = "hard"
-        else:               band = "expert"
-        return {
-            "target_difficulty": round(target),
-            "difficulty_band":   band,
-            "player_rating":     player_rating,
-            "tip":               f"Next question should be rated ~{round(target)} ({band}).",
-        }
-
-
-# ─────────────────────────────────────────────────────────────
-# THE TRAFFIC COP
-# ─────────────────────────────────────────────────────────────
-
 def route_recommendation(subject: str, user_data: dict) -> dict:
-    subject_lower   = subject.lower().strip()
-    is_hierarchical = any(s in subject_lower for s in HIERARCHICAL_SUBJECTS)
-
-    if is_hierarchical:
+    """
+    Used by the legacy HybridRouterView in views.py.
+    Now automatically uses the ML-based RoutingClassifier under the hood.
+    """
+    router = RoutingClassifier()
+    
+    # Mock or extract metrics from user_data
+    avg_acc = 0.6
+    var_acc = 0.2
+    elo = float(user_data.get("elo_rating", 1200.0)) / 2000.0
+    
+    route_decision = router.predict_route(avg_acc, var_acc, elo, subject=subject)
+    
+    if route_decision == "hierarchical":
         mastered = user_data.get("mastered_topics", [])
         return {
             "engine_used":    "hierarchical_prerequisite_graph",
@@ -205,12 +294,11 @@ def route_recommendation(subject: str, user_data: dict) -> dict:
             "recommendation": HierarchicalEngine.get_next_topic(subject, mastered),
         }
     else:
-        elo        = float(user_data.get("elo_rating", 1200.0))
         difficulty = user_data.get("question_difficulty")
         correct    = user_data.get("got_correct")
 
         if difficulty is not None and correct is not None:
-            update = EloEngine.update_rating(elo, float(difficulty), bool(correct))
+            update = EloEngine.update_rating(float(elo * 2000.0), float(difficulty), bool(correct))
             return {
                 "engine_used":   "elo_rating",
                 "subject":       subject,
@@ -220,5 +308,5 @@ def route_recommendation(subject: str, user_data: dict) -> dict:
         return {
             "engine_used":   "elo_rating",
             "subject":       subject,
-            "next_question": EloEngine.pick_next_difficulty(elo),
+            "next_question": EloEngine.pick_next_difficulty(float(elo * 2000.0)),
         }

@@ -22,6 +22,8 @@ import NotFound from "./pages/NotFound";
 import { ThemeProvider } from "@/components/theme-provider";
 import Friends from "./pages/Friends";
 import CodingHub from "./pages/CodingHub";
+import DirectChat from "./pages/DirectChat";
+import LiveCollaborativeWorkspace from "./pages/LiveCollaborativeWorkspace";
 
 const queryClient = new QueryClient();
 
@@ -59,6 +61,7 @@ const App = () => (
                       <Route path="/groups" element={<StudyGroups />} />
                       <Route path="/friends" element={<Friends />} />
                       <Route path="/groups/:groupId" element={<GroupDetail />} />
+                      <Route path="/collab/:groupId" element={<LiveCollaborativeWorkspace />} />
                       <Route path="/flashcards" element={<AIFlashcards />} />
                       <Route path="/quiz" element={<AIQuiz />} />
                       <Route path="/quiz/take/:quizId" element={<QuizTaking />} />
@@ -70,6 +73,7 @@ const App = () => (
                       <Route path="/files" element={<FileLibrary />} />
                       <Route path="/notifications" element={<Notifications />} />
                       <Route path="/settings" element={<Settings />} />
+                      <Route path="/chat" element={<DirectChat />} />
                       <Route path="*" element={<NotFound />} />
                     </Routes>
                   </DashboardLayout>

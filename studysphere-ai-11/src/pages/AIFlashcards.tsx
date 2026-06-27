@@ -60,7 +60,26 @@ export default function AIFlashcards() {
 
     try {
       const res = await aiAPI.generateFlashcards(selectedMaterialId, topic || "General Summary");
-      setGeneratedCards(res.data.flashcards || res.data || []); 
+      let parsedCards = res.data.flashcards || res.data || [];
+      
+      // Handle case where LLM wrapped the array in an object (e.g. {"flashcards": [...]})
+      if (parsedCards && !Array.isArray(parsedCards)) {
+          if (parsedCards.flashcards && Array.isArray(parsedCards.flashcards)) {
+              parsedCards = parsedCards.flashcards;
+          } else if (parsedCards.cards && Array.isArray(parsedCards.cards)) {
+              parsedCards = parsedCards.cards;
+          } else {
+              const firstArray = Object.values(parsedCards).find(v => Array.isArray(v));
+              parsedCards = firstArray || [];
+          }
+      }
+      
+      if (!Array.isArray(parsedCards) || parsedCards.length === 0) {
+        alert("AI could not generate flashcards. Try a different file.");
+        return;
+      }
+      
+      setGeneratedCards(parsedCards); 
     } catch (err) {
       console.error("AI Error", err);
       alert("Failed to generate. Make sure Backend AI is running.");

@@ -4,55 +4,36 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Bell, CheckCheck, Trash2, Users, BookOpen, Calendar, Trophy, MessageSquare } from "lucide-react";
 
+import { useState, useEffect } from "react";
+
 export default function Notifications() {
-  // Mock data - will be fetched from Django API
-  const notifications = [
-    {
-      id: 1,
-      type: "group",
-      icon: Users,
-      title: "New member joined Math Wizards",
-      description: "Sarah Johnson joined your study group",
-      time: "5 minutes ago",
-      read: false,
-    },
-    {
-      id: 2,
-      type: "quiz",
-      icon: BookOpen,
-      title: "New quiz available",
-      description: "Advanced Calculus Quiz is now available in Math Wizards",
-      time: "1 hour ago",
-      read: false,
-    },
-    {
-      id: 3,
-      type: "session",
-      icon: Calendar,
-      title: "Study session starting soon",
-      description: "Physics Lab Discussion starts in 30 minutes",
-      time: "2 hours ago",
-      read: false,
-    },
-    {
-      id: 4,
-      type: "achievement",
-      icon: Trophy,
-      title: "Achievement unlocked!",
-      description: "You earned the 'Week Warrior' badge",
-      time: "1 day ago",
-      read: true,
-    },
-    {
-      id: 5,
-      type: "message",
-      icon: MessageSquare,
-      title: "New message in Chem Club",
-      description: "Mike Chen shared new study materials",
-      time: "2 days ago",
-      read: true,
-    },
-  ];
+  const [notifications, setNotifications] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetch("/api/notifications/", {
+      headers: { Authorization: `Bearer ${localStorage.getItem("access_token")}` }
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (Array.isArray(data)) {
+        setNotifications(data.map(n => ({
+          ...n,
+          icon: Bell,
+          read: n.is_read
+        })));
+      }
+    })
+    .catch(console.error);
+  }, []);
+
+  const handleMarkAllRead = () => {
+    fetch("/api/notifications/", {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${localStorage.getItem("access_token")}` }
+    }).then(() => {
+      setNotifications(notifications.map(n => ({ ...n, read: true })));
+    });
+  };
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
@@ -74,6 +55,7 @@ export default function Notifications() {
         <div className="flex gap-2">
           <Button 
             variant="outline" 
+            onClick={handleMarkAllRead}
             className="border-primary text-primary hover:bg-primary hover:text-primary-foreground"
           >
             <CheckCheck className="h-4 w-4 mr-2" />

@@ -1,20 +1,48 @@
 import { useEffect, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Search, UserPlus, Check, X, MessageCircle, Clock, Users, UserMinus } from "lucide-react";
+import { Link } from "react-router-dom";
+import {
+  User,
+  MessageSquare,
+  Search,
+  UserPlus,
+  Check,
+  X,
+  MoreHorizontal,
+} from "lucide-react";
 import api, { userAPI } from "@/services/api";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
+
+type TabKey = "friends" | "pending" | "find";
+
+function AvatarBlock({ online }: { online?: boolean }) {
+  return (
+    <div className="relative shrink-0">
+      <div className="h-10 w-10 rounded-full bg-slate-800 border border-border flex items-center justify-center">
+        <User className="h-5 w-5 text-muted-foreground" />
+      </div>
+      {online !== undefined && (
+        <span
+          className={`absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-background ${
+            online ? "bg-emerald-500" : "bg-slate-600"
+          }`}
+        />
+      )}
+    </div>
+  );
+}
 
 export default function Friends() {
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [tab, setTab] = useState<TabKey>("friends");
+  
+  // Data State
   const [friends, setFriends] = useState<any[]>([]);
   const [pendingRequests, setPendingRequests] = useState<any[]>([]);
-  
-  // Search State
-  const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<any[]>([]);
+  
+  // Input State
+  const [query, setQuery] = useState("");
+  const [findQuery, setFindQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState("");
 
@@ -41,26 +69,23 @@ export default function Friends() {
     }
   };
 
-  // 👇 THE FIX: Uses your perfectly configured `api` instance instead of hardcoded Axios
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (searchQuery.length < 3) return;
+    if (findQuery.length < 3) return;
     
     setIsSearching(true);
     setSearchError(""); 
     setSearchResults([]); 
     
     try {
-      const res = await api.get(`/users/search/?q=${searchQuery}`);
-
+      const res = await api.get(`/users/search/?q=${findQuery}`);
       if (res.data.users && res.data.users.length > 0) {
           setSearchResults(res.data.users);
       } else {
-          setSearchError(`No users found matching "${searchQuery}"`);
+          setSearchError(`No users found matching "${findQuery}"`);
       }
     } catch (err: any) {
-      console.error("Search failed", err);
-      setSearchError(err.response?.data?.error || "Backend error: Check Django terminal!");
+      setSearchError(err.response?.data?.error || "Backend error");
     } finally {
       setIsSearching(false);
     }
@@ -71,6 +96,7 @@ export default function Friends() {
       await api.post('/friends/request/', { receiver_id: userId });
       alert("Friend request sent! 🚀");
       setSearchResults(prev => prev.filter(u => u.id !== userId));
+      fetchFriends();
     } catch (err: any) {
       alert(err.response?.data?.error || "Failed to send request.");
     }
@@ -85,137 +111,290 @@ export default function Friends() {
     }
   };
 
-  const cardClass = "bg-white dark:bg-slate-800/60 border-slate-200 dark:border-slate-700/50 shadow-sm hover:shadow-md transition-all";
+  const handleRemoveFriend = async (connectionId: number) => {
+    try {
+      await api.delete(`/friends/request/${connectionId}/`);
+      fetchFriends();
+    } catch (err) {
+      alert("Failed to remove friend.");
+    }
+  };
+
+  const filteredFriends = friends.filter((conn) => {
+    const f = conn.sender.id === currentUser?.id ? conn.receiver : conn.sender;
+    return f.username.toLowerCase().includes(query.toLowerCase());
+  });
+
+  const TABS: { key: TabKey; label: string; count?: number }[] = [
+    { key: "friends", label: "My Friends",  count: friends.length },
+    { key: "pending", label: "Pending",     count: pendingRequests.length },
+    { key: "find",    label: "Find Friends" },
+  ];
 
   return (
-    <div className="space-y-8 max-w-5xl mx-auto w-full p-6 md:p-8 pb-10 animate-in fade-in duration-500">
-      
-      <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 rounded-3xl p-8 text-white shadow-xl flex flex-col items-center text-center">
-        <Users className="h-12 w-12 mb-4 opacity-90" />
-        <h1 className="text-4xl font-extrabold tracking-tight mb-2">Your Network</h1>
-        <p className="text-blue-100 text-lg max-w-xl">
-            Connect with classmates, share knowledge, and dominate your exams together.
-        </p>
-      </div>
+    <div className="min-h-screen bg-background text-foreground">
+      <div className="max-w-4xl mx-auto px-6 py-10">
+        {/* HEADER */}
+        <header className="mb-8">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+            Your Network
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Manage your study connections and discover new peers.
+          </p>
+        </header>
 
-      <Tabs defaultValue="network" className="w-full">
-        <TabsList className="grid w-full grid-cols-3 mb-8 bg-slate-100 dark:bg-slate-900 p-1 rounded-xl">
-          <TabsTrigger value="network" className="rounded-lg dark:data-[state=active]:bg-slate-800">My Friends</TabsTrigger>
-          <TabsTrigger value="pending" className="rounded-lg dark:data-[state=active]:bg-slate-800">
-            Pending <span className="ml-2 bg-blue-600 text-white text-[10px] px-2 py-0.5 rounded-full">{pendingRequests.length}</span>
-          </TabsTrigger>
-          <TabsTrigger value="search" className="rounded-lg dark:data-[state=active]:bg-slate-800">Find Friends</TabsTrigger>
-        </TabsList>
+        {/* TABS */}
+        <div className="border-b border-border mb-6">
+          <nav className="flex items-center gap-1" role="tablist">
+            {TABS.map((t) => {
+              const active = tab === t.key;
+              return (
+                <button
+                  key={t.key}
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setTab(t.key)}
+                  className={`relative px-3 py-2.5 text-sm font-medium ${
+                    active
+                      ? "text-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <span className="inline-flex items-center gap-2">
+                    {t.label}
+                    {typeof t.count === "number" && (
+                      <span
+                        className={`inline-flex items-center justify-center h-5 min-w-[1.25rem] px-1.5 rounded-md text-[11px] font-medium ${
+                          active
+                            ? "bg-primary/15 text-primary"
+                            : "bg-slate-900 text-muted-foreground border border-border"
+                        }`}
+                      >
+                        {t.count}
+                      </span>
+                    )}
+                  </span>
+                  {active && (
+                    <span className="absolute left-0 right-0 -bottom-px h-px bg-primary" />
+                  )}
+                </button>
+              );
+            })}
+          </nav>
+        </div>
 
-        <TabsContent value="network" className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {friends.length === 0 ? (
-                <div className="col-span-full text-center py-12 text-slate-500 dark:text-slate-400">
-                    <UserMinus className="h-12 w-12 mx-auto mb-3 opacity-20" />
-                    <p>You haven't added any friends yet.</p>
+        {/* PANEL: MY FRIENDS */}
+        {tab === "friends" && (
+          <div role="tabpanel">
+            {/* Inline search */}
+            <div className="flex items-center gap-2 h-10 px-3 mb-4 rounded-md bg-slate-900 border border-border">
+              <Search className="h-4 w-4 text-muted-foreground shrink-0" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Filter your friends"
+                className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+              />
+            </div>
+
+            <div className="border border-border rounded-lg bg-slate-950/40 divide-y divide-border">
+              {filteredFriends.length === 0 ? (
+                <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+                  No friends match that filter.
                 </div>
-            ) : (
-                friends.map((conn) => {
-                    const friend = conn.sender.id === currentUser?.id ? conn.receiver : conn.sender;
-                    return (
-                        <Card key={conn.id} className={`${cardClass} flex items-center p-4`}>
-                            <Avatar className="h-12 w-12 border-2 border-blue-100 dark:border-slate-700 shrink-0">
-                                <AvatarFallback className="bg-blue-600 text-white font-bold">
-                                    {friend.username.charAt(0).toUpperCase()}
-                                </AvatarFallback>
-                            </Avatar>
-                            <div className="ml-4 flex-1 truncate">
-                                <h3 className="font-bold text-slate-800 dark:text-white truncate">{friend.username}</h3>
-                                <p className="text-xs text-emerald-500 font-medium">Connected</p>
-                            </div>
-                            <Button variant="secondary" className="bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-slate-800 dark:text-blue-400 shrink-0 shadow-sm">
-                                <MessageCircle className="h-4 w-4 mr-2" /> Message
-                            </Button>
-                        </Card>
-                    );
+              ) : (
+                filteredFriends.map((conn) => {
+                  const f = conn.sender.id === currentUser?.id ? conn.receiver : conn.sender;
+                  return (
+                    <div
+                      key={conn.id}
+                      className="flex items-center gap-3 px-4 py-3 hover:bg-slate-900/50"
+                    >
+                      <Link to={`/chat`}>
+                        <AvatarBlock online={true} />
+                      </Link>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <Link to={`/chat`} className="text-sm font-medium text-foreground truncate hover:underline">
+                            {f.username}
+                          </Link>
+                        </div>
+                        <p className="text-xs text-emerald-500 font-medium truncate mt-0.5">
+                          Connected
+                        </p>
+                      </div>
+
+                      <Link to="/chat" className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium bg-primary text-primary-foreground hover:bg-blue-600 transition-colors">
+                        <MessageSquare className="h-3.5 w-3.5" />
+                        Message
+                      </Link>
+                      
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            aria-label="More options"
+                            className="h-8 w-8 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-slate-800 border border-transparent hover:border-border transition-colors"
+                          >
+                            <MoreHorizontal className="h-4 w-4" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="bg-slate-900 border-slate-800 text-foreground">
+                          <DropdownMenuItem className="text-red-400 focus:text-red-300 focus:bg-slate-800 cursor-pointer" onClick={() => handleRemoveFriend(conn.id)}>
+                            Remove Friend
+                          </DropdownMenuItem>
+                          <DropdownMenuItem className="cursor-pointer focus:bg-slate-800">
+                            Mute Notifications
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  );
                 })
-            )}
+              )}
+            </div>
           </div>
-        </TabsContent>
+        )}
 
-        <TabsContent value="pending" className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* PANEL: PENDING */}
+        {tab === "pending" && (
+          <div role="tabpanel">
             {pendingRequests.length === 0 ? (
-                <div className="col-span-full text-center py-12 text-slate-500 dark:text-slate-400">
-                    <Clock className="h-12 w-12 mx-auto mb-3 opacity-20" />
-                    <p>No pending friend requests.</p>
-                </div>
+              <div className="border border-border rounded-lg px-4 py-12 text-center">
+                <p className="text-sm text-muted-foreground">
+                  No pending requests.
+                </p>
+              </div>
             ) : (
-                pendingRequests.map((conn) => (
-                    <Card key={conn.id} className={`${cardClass} flex items-center p-4`}>
-                        <Avatar className="h-12 w-12 border-2 border-amber-100 dark:border-slate-700 shrink-0">
-                            <AvatarFallback className="bg-amber-500 text-white font-bold">
-                                {conn.sender.username.charAt(0).toUpperCase()}
-                            </AvatarFallback>
-                        </Avatar>
-                        <div className="ml-4 flex-1 truncate">
-                            <h3 className="font-bold text-slate-800 dark:text-white truncate">{conn.sender.username}</h3>
-                            <p className="text-xs text-amber-500 font-medium">Wants to connect</p>
+              <div className="border border-border rounded-lg bg-slate-950/40 divide-y divide-border">
+                {pendingRequests.map((conn) => {
+                  const isIncoming = conn.receiver.id === currentUser?.id;
+                  const otherUser = isIncoming ? conn.sender : conn.receiver;
+                  return (
+                    <div
+                      key={conn.id}
+                      className="flex items-center gap-3 px-4 py-3 hover:bg-slate-900/50"
+                    >
+                      <AvatarBlock />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium text-foreground truncate">
+                            {otherUser.username}
+                          </p>
                         </div>
-                        <div className="flex gap-2 shrink-0">
-                            <Button size="icon" onClick={() => handleAction(conn.id, 'accept')} className="bg-emerald-500 hover:bg-emerald-600 text-white rounded-full shadow-sm">
-                                <Check className="h-4 w-4" />
-                            </Button>
-                            <Button size="icon" variant="outline" onClick={() => handleAction(conn.id, 'reject')} className="text-red-500 border-red-200 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-900/30 rounded-full shadow-sm">
-                                <X className="h-4 w-4" />
-                            </Button>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {isIncoming
+                            ? "wants to connect"
+                            : "Request sent · awaiting reply"}
+                        </p>
+                      </div>
+
+                      {isIncoming ? (
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => handleAction(conn.id, 'accept')} className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium bg-primary text-primary-foreground hover:bg-blue-600 transition-colors">
+                            <Check className="h-3.5 w-3.5" />
+                            Accept
+                          </button>
+                          <button onClick={() => handleAction(conn.id, 'reject')} className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium text-muted-foreground hover:text-foreground bg-transparent border border-border hover:bg-slate-900 transition-colors">
+                            <X className="h-3.5 w-3.5" />
+                            Decline
+                          </button>
                         </div>
-                    </Card>
-                ))
+                      ) : (
+                        <button className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium text-muted-foreground hover:text-foreground bg-transparent border border-border hover:bg-slate-900 transition-colors">
+                          Cancel
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </div>
-        </TabsContent>
+        )}
 
-        <TabsContent value="search" className="space-y-6">
-          <Card className={`${cardClass} p-6`}>
-              <form onSubmit={handleSearch} className="flex gap-3">
-                  <div className="relative flex-1">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
-                      <Input 
-                          placeholder="Search for a classmate's username (min 3 letters)..." 
-                          value={searchQuery}
-                          onChange={(e) => setSearchQuery(e.target.value)}
-                          className="pl-10 h-12 bg-slate-50 dark:bg-slate-900 dark:border-slate-700 text-lg rounded-xl"
-                      />
-                  </div>
-                  <Button type="submit" disabled={isSearching || searchQuery.length < 3} className="h-12 px-6 rounded-xl bg-blue-600 hover:bg-blue-700 shadow-md text-white">
-                      {isSearching ? "Searching..." : "Find"}
-                  </Button>
+        {/* PANEL: FIND FRIENDS */}
+        {tab === "find" && (
+          <div role="tabpanel">
+            <div className="border border-border rounded-lg p-5 bg-slate-950/40 mb-6">
+              <label className="block text-xs font-medium uppercase tracking-wider text-muted-foreground mb-2">
+                Search by name or handle
+              </label>
+              <form
+                onSubmit={handleSearch}
+                className="flex items-center gap-2"
+              >
+                <div className="flex-1 flex items-center gap-2 h-10 px-3 rounded-md bg-slate-900 border border-border">
+                  <Search className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <input
+                    value={findQuery}
+                    onChange={(e) => setFindQuery(e.target.value)}
+                    placeholder="e.g. Suhas or Venkat"
+                    className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={isSearching}
+                  className="inline-flex items-center gap-1.5 h-10 px-4 rounded-md text-sm font-medium bg-primary text-primary-foreground hover:bg-blue-600 disabled:opacity-50 transition-colors"
+                >
+                  <UserPlus className="h-4 w-4" />
+                  {isSearching ? "Searching..." : "Search"}
+                </button>
               </form>
 
-              {searchError && (
-                  <div className="mt-4 p-4 bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400 border border-red-200 dark:border-red-900 rounded-xl text-center font-medium">
-                      {searchError}
-                  </div>
-              )}
-          </Card>
+              <p className="mt-4 text-xs text-muted-foreground">
+                Tip: You can search by full name, partial name, or username.
+                Results will appear below once you search.
+              </p>
+            </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {searchResults.map((user) => (
-                  <Card key={user.id} className={`${cardClass} flex items-center p-4`}>
-                      <Avatar className="h-12 w-12 border-2 border-indigo-100 dark:border-slate-700 shrink-0">
-                          <AvatarFallback className="bg-indigo-600 text-white font-bold">
-                              {user.username.charAt(0).toUpperCase()}
-                          </AvatarFallback>
-                      </Avatar>
-                      <div className="ml-4 flex-1 truncate">
-                          <h3 className="font-bold text-slate-800 dark:text-white truncate">{user.username}</h3>
-                          <p className="text-xs text-slate-500 dark:text-slate-400">Student</p>
+            {/* Results state */}
+            {searchError ? (
+              <div className="border border-dashed border-border rounded-lg px-4 py-12 text-center text-red-400">
+                <p className="text-sm">{searchError}</p>
+              </div>
+            ) : searchResults.length > 0 ? (
+              <div className="border border-border rounded-lg bg-slate-950/40 divide-y divide-border">
+                {searchResults.map((user) => (
+                  <div
+                    key={user.id}
+                    className="flex items-center gap-3 px-4 py-3 hover:bg-slate-900/50"
+                  >
+                    <AvatarBlock />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium text-foreground truncate">
+                          {user.first_name ? `${user.first_name} ${user.last_name}` : user.username}
+                        </p>
+                        <span className="text-xs text-muted-foreground">
+                          @{user.username}
+                        </span>
                       </div>
-                      <Button onClick={() => sendRequest(user.id)} className="bg-indigo-600 hover:bg-indigo-700 text-white shrink-0 shadow-sm rounded-lg">
-                          <UserPlus className="h-4 w-4 mr-2" /> Add
-                      </Button>
-                  </Card>
-              ))}
-          </div>
-        </TabsContent>
+                    </div>
 
-      </Tabs>
+                    <button 
+                      onClick={() => sendRequest(user.id)}
+                      className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium text-primary hover:text-primary-foreground bg-transparent border border-primary hover:bg-primary transition-colors"
+                    >
+                      <UserPlus className="h-3.5 w-3.5" />
+                      Add Friend
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-6 border border-dashed border-border rounded-lg px-4 py-12 text-center">
+                <p className="text-sm text-muted-foreground">
+                  {findQuery.trim()
+                    ? `Press Search to find people matching "${findQuery.trim()}".`
+                    : "Start typing above to discover new peers."}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   db:
-    image: postgres:15
+    image: ankane/pgvector:latest
     container_name: learnlm_postgres
     environment:
       POSTGRES_DB: learnlm_db

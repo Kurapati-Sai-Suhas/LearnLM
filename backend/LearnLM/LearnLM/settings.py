@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     "rest_framework_simplejwt",
     "corsheaders",
     "channels",
+    "pgvector",
 ]
 
 MIDDLEWARE = [
@@ -79,10 +80,14 @@ DATABASES = {
         'NAME': 'learnlm_db',
         'USER': 'postgres',
         'PASSWORD': 'yourpassword',
-        'HOST': 'localhost',
+        'HOST': '127.0.0.1',
         'PORT': '5432',
     }
 }
+
+import sys
+if 'pytest' in sys.modules or 'pytest' in sys.argv[0]:
+    pass
 
 
 # Password validation
@@ -119,8 +124,10 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://localhost:5173", 
     "http://localhost:8080", 
+    "http://172.19.0.1:8080",
 ]
 
+CORS_ALLOW_ALL_ORIGINS = True # Enabled for local development across different IP networks
 CORS_ALLOW_CREDENTIALS = True  
 
 
@@ -150,6 +157,7 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 # 👇 Because load_dotenv() is at the top, these will now successfully grab your keys!
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 JUDGE0_API_KEY = os.getenv("JUDGE0_API_KEY")
 JUDGE0_API_HOST = os.getenv("JUDGE0_API_HOST", "judge0-extra-ce.p.rapidapi.com")
 
@@ -159,3 +167,11 @@ CHANNEL_LAYERS = {
         "BACKEND": "channels.layers.InMemoryChannelLayer"
     }
 }
+
+# --- EMAIL SETTINGS (Day 4 Integration) ---
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "dummy@example.com")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD")

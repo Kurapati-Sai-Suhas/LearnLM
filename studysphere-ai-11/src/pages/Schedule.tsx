@@ -2,11 +2,54 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Calendar as CalendarIcon, Plus, Sparkles } from "lucide-react";
 import { Calendar } from "@/components/ui/calendar";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { format } from "date-fns";
+import { toast } from "sonner";
+import { Input } from "@/components/ui/input";
 
 export default function Schedule() {
   const [date, setDate] = useState<Date | undefined>(new Date());
-  const events: any[] = [];
+  const [events, setEvents] = useState<any[]>([]);
+  const [showForm, setShowForm] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
+  const [newTime, setNewTime] = useState("");
+
+  useEffect(() => {
+    fetch("/api/schedule/", {
+      headers: { Authorization: `Bearer ${localStorage.getItem("access_token")}` }
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (Array.isArray(data)) setEvents(data);
+    })
+    .catch(console.error);
+  }, []);
+
+  const handleAddSession = () => {
+    if (!date || !newTime || !newTitle) {
+      toast.error("Please select date, time and enter title");
+      return;
+    }
+    const dateStr = format(date, "yyyy-MM-dd");
+    const start_time = `${dateStr}T${newTime}:00`;
+
+    fetch("/api/schedule/", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${localStorage.getItem("access_token")}`
+      },
+      body: JSON.stringify({ title: newTitle, start_time })
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.status === "success") {
+        toast.success("Session scheduled!");
+        setEvents([...events, { id: data.id, title: newTitle, start_time }]);
+        setShowForm(false);
+      }
+    });
+  };
 
   const glassCard =
     "relative overflow-hidden border-border/60 bg-card/40 backdrop-blur-md " +
@@ -53,6 +96,7 @@ export default function Schedule() {
 
         <Button
           data-testid="new-session-btn"
+          onClick={() => setShowForm(true)}
           className="relative h-11 px-5 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 shadow-[0_0_18px_rgba(59,130,246,0.5)] hover:shadow-[0_0_28px_rgba(59,130,246,0.7)] transition-all font-medium"
         >
           <Plus className="h-4 w-4 mr-2" /> New Session
@@ -91,7 +135,32 @@ export default function Schedule() {
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-6">
-            {events.length === 0 ? (
+            {showForm ? (
+              <div className="space-y-4 animate-in fade-in">
+                <div>
+                  <label className="text-sm font-medium">Session Title</label>
+                  <Input 
+                    value={newTitle} 
+                    onChange={e => setNewTitle(e.target.value)} 
+                    placeholder="e.g. Master DP Algorithms" 
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium">Time</label>
+                  <Input 
+                    type="time" 
+                    value={newTime} 
+                    onChange={e => setNewTime(e.target.value)} 
+                    className="mt-1"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <Button onClick={handleAddSession} className="bg-primary text-primary-foreground">Save Session</Button>
+                  <Button variant="ghost" onClick={() => setShowForm(false)}>Cancel</Button>
+                </div>
+              </div>
+            ) : events.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-56 text-center">
                 <div className="h-14 w-14 rounded-2xl border border-dashed border-border/60 bg-background/30 backdrop-blur flex items-center justify-center mb-3">
                   <CalendarIcon className="h-6 w-6 text-muted-foreground" />
@@ -100,13 +169,28 @@ export default function Schedule() {
                 <Button
                   data-testid="empty-schedule-cta"
                   variant="link"
+                  onClick={() => setShowForm(true)}
                   className="text-primary mt-1 hover:text-primary/80"
                 >
                   Schedule one now →
                 </Button>
               </div>
             ) : (
-              <div>{/* Event list */}</div>
+              <div className="space-y-4">
+                {events.map((event, i) => (
+                  <div key={i} className="flex items-center gap-4 p-4 rounded-xl border border-border/60 bg-background/30 backdrop-blur">
+                    <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+                      <CalendarIcon className="h-5 w-5 text-primary" />
+                    </div>
+                    <div>
+                      <h4 className="font-medium text-foreground">{event.title}</h4>
+                      <p className="text-sm text-muted-foreground">
+                        {format(new Date(event.start_time), "MMM d, h:mm a")}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </CardContent>
         </Card>

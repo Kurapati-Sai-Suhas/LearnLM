@@ -3,6 +3,7 @@ from django.contrib.auth.models import AbstractUser
 from datetime import timedelta, timezone
 from django.conf import settings
 from django.utils import timezone
+from pgvector.django import VectorField
 
 
 class User(AbstractUser):
@@ -159,7 +160,7 @@ class Document(models.Model):
     file_url = models.URLField(max_length=500, blank=True)
     file = models.FileField(upload_to="documents/", blank=True, null=True)
     file_type = models.CharField(max_length=10, choices=FILE_TYPE_CHOICES, default="other")
-    feature_vector = models.TextField(null=True, blank=True)
+    feature_vector = VectorField(dimensions=512, null=True, blank=True)
     vector_extracted_at = models.DateTimeField(null=True, blank=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
@@ -224,8 +225,14 @@ class Question(models.Model):
 class UserCodingProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="coding_profile")
     elo_rating = models.FloatField(default=1200.0)
+    irt_latent_logic = models.FloatField(default=0.0) # Theta value for logic
+    irt_latent_syntax = models.FloatField(default=0.0) # Theta value for syntax
+    irt_latent_optimization = models.FloatField(default=0.0) # Theta value for optimization
     total_submissions = models.IntegerField(default=0)
     successful_submissions = models.IntegerField(default=0)
+    current_streak = models.IntegerField(default=0)
+    highest_streak = models.IntegerField(default=0)
+    last_active_date = models.DateField(null=True, blank=True)
 
     def __str__(self):
         return f"{self.user.username} — Elo: {self.elo_rating:.0f}"
@@ -279,6 +286,11 @@ class UserTopicMastery(models.Model):
     accuracy = models.FloatField(default=0.0)  
     reviews = models.IntegerField(default=0)
     elo_rating = models.FloatField(default=1200.0)
+    
+    # Half-Life Regression Fields
+    hlr_halflife = models.FloatField(default=1.0)
+    hlr_alpha = models.FloatField(default=1.0)
+    
     last_practiced = models.DateTimeField(default=timezone.now)
 
     class Meta:
@@ -286,6 +298,34 @@ class UserTopicMastery(models.Model):
 
     def __str__(self):
         return f"{self.user.username} - {self.topic} ({self.elo_rating})"
+
+
+class AgenticCoachLog(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='coach_logs')
+    problem_id = models.CharField(max_length=100)
+    failed_attempts_count = models.IntegerField(default=3)
+    generated_hint = models.TextField()
+    timestamp = models.DateTimeField(auto_now_add=True)
+    webhook_fired = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"Hint for {self.user.username} on problem {self.problem_id}"
+
+
+class RecommendationLog(models.Model):
+    """
+    Phase 1 Production Flywheel: Captures real AI recommendations and user outcomes.
+    """
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='recommendation_logs')
+    recommended_topic = models.CharField(max_length=100)
+    engine_used = models.CharField(max_length=50) # 'hierarchical' or 'flat'
+    predicted_success_prob = models.FloatField(null=True, blank=True)
+    problem_id = models.CharField(max_length=100, null=True, blank=True) # The specific problem recommended
+    actual_result_correct = models.BooleanField(null=True, blank=True) # Populated after they submit
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.user.username} -> {self.recommended_topic} ({self.engine_used})"
 
 
 # ── WebSocket Group Chat ─────────────────────────────────────
@@ -309,6 +349,59 @@ class Profile(models.Model):
     major = models.CharField(max_length=100, blank=True, null=True)
     graduation_year = models.IntegerField(blank=True, null=True)
     bio = models.TextField(blank=True, null=True)
+    email_alerts = models.BooleanField(default=True)
 
     def __str__(self):
         return f"{self.user.username}'s Profile"
+
+class Notification(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='notifications')
+    title = models.CharField(max_length=200)
+    description = models.TextField()
+    type = models.CharField(max_length=50) # 'system', 'course', 'message', 'achievement'
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return self.title
+
+class StudySession(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='study_sessions')
+    title = models.CharField(max_length=200)
+    start_time = models.DateTimeField()
+    duration_minutes = models.IntegerField(default=60)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['start_time']
+
+    def __str__(self):
+        return f"{self.user.username} - {self.title} at {self.start_time}"
+
+# ── Gamification ──────────────────────────────────────────────
+
+class Badge(models.Model):
+    badge_id = models.CharField(max_length=50, unique=True)
+    name = models.CharField(max_length=100)
+    description = models.TextField()
+    color = models.CharField(max_length=20, default="primary")
+    icon_name = models.CharField(max_length=50, default="Award") 
+
+    def __str__(self):
+        return self.name
+
+
+class UserBadge(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='earned_badges')
+    badge = models.ForeignKey(Badge, on_delete=models.CASCADE)
+    awarded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('user', 'badge')
+        ordering = ['-awarded_at']
+
+    def __str__(self):
+        return f"{self.user.username} earned {self.badge.name}"

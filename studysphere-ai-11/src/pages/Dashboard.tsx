@@ -15,8 +15,12 @@ import {
   Activity,
   ArrowRight,
   ArrowUpRight,
+  Database,
+  RefreshCw,
+  Server
 } from "lucide-react";
 import api, { userAPI } from "@/services/api";
+import GamificationDashboard from "@/components/GamificationDashboard";
 
 // Dummy shape data for the Study Hours sparkline (the BIG number stays = stats.study_hours)
 const STUDY_TREND = [
@@ -34,6 +38,7 @@ export default function Dashboard() {
   });
 
   const [realGroups, setRealGroups] = useState<any[]>([]);
+  const [mlops, setMlops] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -62,6 +67,18 @@ export default function Dashboard() {
           quizzes_taken: statsData.quizzes_taken || 0,
           achievement_points: statsData.achievement_points || 0,
         });
+
+        // Load MLOps Data
+        try {
+          const mlopsRes = await fetch("http://localhost:8000/api/mlops/telemetry/", {
+            headers: { Authorization: `Bearer ${localStorage.getItem('authToken') || localStorage.getItem('access')}` }
+          });
+          if (mlopsRes.ok) {
+            setMlops(await mlopsRes.json());
+          }
+        } catch (e) {
+          console.error("Failed to load MLOps telemetry");
+        }
       } catch (error) {
         console.error("❌ Failed to load dashboard:", error);
       } finally {
@@ -348,6 +365,9 @@ export default function Dashboard() {
 
         {/* Right column */}
         <div className="md:col-span-5 space-y-6">
+          
+          <GamificationDashboard />
+
           {/* Recent Activity */}
           <Card
             data-testid="recent-activity-card"
@@ -415,6 +435,106 @@ export default function Dashboard() {
           </Card>
         </div>
       </div>
+
+      {/* MLOps TELEMETRY DASHBOARD */}
+      {mlops && (
+        <div className="mt-12 animate-in slide-in-from-bottom-8 fade-in duration-500 delay-700">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-2xl font-semibold text-foreground flex items-center gap-2">
+                <Database className="h-5 w-5 text-indigo-400" />
+                MLOps Telemetry Dashboard
+              </h2>
+              <p className="text-sm text-muted-foreground mt-1">
+                Visualizing Phase 1 (Data Flywheel) and Phase 2 (Autonomous Retraining)
+              </p>
+            </div>
+            <Button
+              onClick={() => alert("🚀 Triggering Phase 2: Autonomous Retraining Pipeline in the backend...")}
+              className="bg-indigo-500 text-white hover:bg-indigo-600 shadow-[0_0_15px_rgba(99,102,241,0.5)] transition-all"
+            >
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Force Retrain Models
+            </Button>
+          </div>
+
+          <div className="grid gap-6 md:grid-cols-3 mb-6">
+            <Card className="border-indigo-500/30 bg-indigo-500/10 backdrop-blur">
+              <CardContent className="p-6">
+                <p className="text-xs uppercase tracking-wider text-indigo-300 mb-2">Total Logs Captured</p>
+                <div className="text-4xl font-bold text-white tabular-nums">{mlops.stats.total_logs_captured}</div>
+              </CardContent>
+            </Card>
+            <Card className="border-emerald-500/30 bg-emerald-500/10 backdrop-blur">
+              <CardContent className="p-6">
+                <p className="text-xs uppercase tracking-wider text-emerald-300 mb-2">GNN Routes</p>
+                <div className="text-4xl font-bold text-white tabular-nums">{mlops.stats.gnn_routes}</div>
+              </CardContent>
+            </Card>
+            <Card className="border-amber-500/30 bg-amber-500/10 backdrop-blur">
+              <CardContent className="p-6">
+                <p className="text-xs uppercase tracking-wider text-amber-300 mb-2">Elo Routes</p>
+                <div className="text-4xl font-bold text-white tabular-nums">{mlops.stats.elo_routes}</div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card className="border-border/60 bg-card/40 backdrop-blur-md">
+            <CardHeader className="border-b border-border/60 pb-4">
+              <CardTitle className="text-base font-medium flex items-center gap-2">
+                <Server className="h-4 w-4 text-primary" />
+                Live Recommendation Logs (Phase 1 Data)
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                  <thead className="text-xs text-muted-foreground uppercase bg-muted/20">
+                    <tr>
+                      <th className="px-6 py-3">Timestamp</th>
+                      <th className="px-6 py-3">User</th>
+                      <th className="px-6 py-3">Topic</th>
+                      <th className="px-6 py-3">Engine Used</th>
+                      <th className="px-6 py-3">Passed Code?</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/60">
+                    {mlops.recent_logs.map((log: any) => (
+                      <tr key={log.id} className="hover:bg-muted/10 transition-colors">
+                        <td className="px-6 py-4 font-mono text-xs">{log.created_at}</td>
+                        <td className="px-6 py-4">{log.user}</td>
+                        <td className="px-6 py-4 font-medium">{log.topic}</td>
+                        <td className="px-6 py-4">
+                          <span className={`px-2 py-1 rounded text-[10px] uppercase font-bold tracking-wider ${log.engine === 'hierarchical' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'}`}>
+                            {log.engine}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4">
+                          {log.actual_result === true ? (
+                            <span className="text-emerald-400 font-medium flex items-center gap-1">Yes</span>
+                          ) : log.actual_result === false ? (
+                            <span className="text-rose-400 font-medium flex items-center gap-1">No</span>
+                          ) : (
+                            <span className="text-muted-foreground italic">Pending</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                    {mlops.recent_logs.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="px-6 py-8 text-center text-muted-foreground italic">
+                          No telemetry data captured yet. Solve some problems!
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
     </div>
   );
 }
