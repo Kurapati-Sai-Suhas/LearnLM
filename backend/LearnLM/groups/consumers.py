@@ -258,28 +258,38 @@ class CodeCollabConsumer(AsyncWebsocketConsumer):
                 self.channel_name
             )
 
-    async def receive(self, text_data):
+    async def receive(self, text_data=None, bytes_data=None):
         """
         Receives Yjs or generic sync payloads and broadcasts to all other clients.
         """
-        try:
-            data = json.loads(text_data)
-        except json.JSONDecodeError:
+        if bytes_data is not None:
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    "type": "code_sync",
+                    "sender_id": self.channel_name,
+                    "payload_bytes": bytes_data
+                }
+            )
             return
 
-        # Broadcast the CRDT update payload to everyone else in the room
-        await self.channel_layer.group_send(
-            self.room_group_name,
-            {
-                "type": "code_sync",
-                "sender_id": self.user.id,
-                "payload": data
-            }
-        )
+        if text_data is not None:
+            # Broadcast the text update payload to everyone else in the room
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    "type": "code_sync",
+                    "sender_id": self.channel_name,
+                    "payload_text": text_data
+                }
+            )
 
     async def code_sync(self, event):
         """
         Sends the synced code to the client (ignoring the sender to prevent echo loops).
         """
-        if event["sender_id"] != self.user.id:
-            await self.send(text_data=json.dumps(event["payload"]))
+        if event["sender_id"] != self.channel_name:
+            if "payload_bytes" in event:
+                await self.send(bytes_data=event["payload_bytes"])
+            elif "payload_text" in event:
+                await self.send(text_data=event["payload_text"])

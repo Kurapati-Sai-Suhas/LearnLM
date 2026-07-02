@@ -333,8 +333,11 @@ class VisualSearchUploadView(APIView):
         }, status=201)
 
 
+from rest_framework.throttling import UserRateThrottle, AnonRateThrottle
+
 class VisualSearchQueryView(APIView):
     permission_classes = [IsAuthenticated]
+    throttle_classes = [UserRateThrottle, AnonRateThrottle]
     parser_classes     = (parsers.MultiPartParser, parsers.FormParser)
 
     def post(self, request):
@@ -375,6 +378,7 @@ class VisualSearchQueryView(APIView):
 
 class RAGDoubtView(APIView):
     permission_classes = [IsAuthenticated]
+    throttle_classes = [UserRateThrottle, AnonRateThrottle]
 
     def post(self, request):
         material_id = request.data.get('materialId')
@@ -403,8 +407,13 @@ class RAGDoubtView(APIView):
             chunk_size=500, chunk_overlap=50
         ).split_text(raw_text)
 
-        answer = RAGService.answer_with_rag(question, chunks)
-        return Response({"answer": answer, "mode": "rag", "chunks_searched": len(chunks)})
+        result = RAGService.answer_with_rag(question, chunks)
+        return Response({
+            "answer": result.get("answer"),
+            "citations": result.get("citations"),
+            "mode": "rag",
+            "chunks_searched": len(chunks)
+        })
 
 
 # ─────────────────────────────────────────────────────────────
@@ -418,6 +427,7 @@ class HybridRouterView(APIView):
     POST { "subject": "Tech Trivia", "elo_rating": 1250, "question_difficulty": 1300, "got_correct": true }
     """
     permission_classes = [IsAuthenticated]
+    throttle_classes = [UserRateThrottle, AnonRateThrottle]
 
     def post(self, request):
         subject = request.data.get('subject', '').strip()

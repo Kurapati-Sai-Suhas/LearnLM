@@ -78,11 +78,11 @@
     --muted-foreground: 240 5% 65%;        /* muted text — readable on dark zinc */
 
     /* ── Primary (UNTOUCHED — glowing blue) ────────────────────── */
-    --primary: 217 91% 60%;
+    --primary: 243 75% 60%;
     --primary-foreground: 0 0% 100%;
 
     /* Accent mirrors primary for consistency */
-    --accent: 217 91% 60%;
+    --accent: 243 75% 60%;
     --accent-foreground: 0 0% 100%;
 
     /* ── Destructive ──────────────────────────────────────────── */
@@ -92,17 +92,17 @@
     /* ── Strokes & inputs ─────────────────────────────────────── */
     --border: 240 6% 15%;                  /* subtle dark gray hairlines */
     --input: 240 6% 15%;
-    --ring: 217 91% 60%;                   /* focus ring — UNTOUCHED */
+    --ring: 243 75% 60%;                   /* focus ring — UNTOUCHED */
 
     /* ── Sidebar tokens (kept in sync; sidebar uses #0a0a0a directly) */
     --sidebar-background: 0 0% 4%;
     --sidebar-foreground: 0 0% 98%;
-    --sidebar-primary: 217 91% 60%;
+    --sidebar-primary: 243 75% 60%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 217 91% 60%;
-    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-accent: 240 5% 15%;
+    --sidebar-accent-foreground: 0 0% 98%;
     --sidebar-border: 240 6% 15%;
-    --sidebar-ring: 217 91% 60%;
+    --sidebar-ring: 243 75% 60%;
   }
 }
 
